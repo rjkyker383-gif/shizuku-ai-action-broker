@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shizuku AI Action Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "reason",
+    "userVisibleSummary",
+    "riskLevel",
+    "params"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "GET_DEVICE_INFO",
+        "GET_PACKAGE_LIST",
+        "GET_CURRENT_APP",
+        "OPEN_APP",
+        "OPEN_SETTINGS",
+        "GET_BATTERY_INFO",
+        "GET_DISPLAY_INFO"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "userVisibleSummary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "riskLevel": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH"]
+    },
+    "params": {
+      "type": "object"
+    }
+  }
+}
