@@ -15,4 +15,8 @@ object ActionAllowList {
     fun isAllowed(action: String): Boolean {
         return action in allowedActions
     }
+
+    fun snapshot(): Set<String> {
+        return allowedActions.toSet()
+    }
 }
