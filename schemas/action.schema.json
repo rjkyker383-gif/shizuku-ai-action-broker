@@ -7,7 +7,6 @@
     "action",
     "reason",
     "userVisibleSummary",
-    "riskLevel",
     "params"
   ],
   "properties": {
@@ -30,10 +29,6 @@
     "userVisibleSummary": {
       "type": "string",
       "minLength": 1
-    },
-    "riskLevel": {
-      "type": "string",
-      "enum": ["LOW", "MEDIUM", "HIGH"]
     },
     "params": {
       "type": "object"
