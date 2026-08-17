@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ALLOWLIST = ROOT / "app/src/main/java/com/rjkyker/shizukuai/broker/ActionAllowList.kt"
+BROKER = ROOT / "app/src/main/java/com/rjkyker/shizukuai/broker"
+ALLOWLIST = BROKER / "ActionAllowList.kt"
+REQUEST = BROKER / "ActionRequest.kt"
 SCHEMA = ROOT / "schemas/action.schema.json"
 EXAMPLE = ROOT / "examples/action.example.json"
 
@@ -15,18 +17,23 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def kotlin_actions(text: str) -> set[str]:
-    match = re.search(r"allowedActions\s*=\s*setOf\((.*?)\)", text, re.DOTALL)
+def kotlin_policy(text: str) -> dict[str, str]:
+    match = re.search(r"actionRiskLevels\s*=\s*mapOf\((.*?)\)\s*\n", text, re.DOTALL)
     if not match:
-        fail("could not locate allowedActions setOf(...) in ActionAllowList.kt")
-    actions = set(re.findall(r'"([A-Z][A-Z0-9_]*)"', match.group(1)))
-    if not actions:
-        fail("Kotlin allowlist is empty")
-    return actions
+        fail("could not locate actionRiskLevels mapOf(...) in ActionAllowList.kt")
+    pairs = re.findall(r'"([A-Z][A-Z0-9_]*)"\s+to\s+RiskLevel\.([A-Z]+)', match.group(1))
+    if not pairs:
+        fail("Kotlin action risk policy is empty")
+    policy = dict(pairs)
+    if len(policy) != len(pairs):
+        fail("duplicate action found in Kotlin action risk policy")
+    return policy
 
 
 def main() -> None:
-    allowlist = kotlin_actions(ALLOWLIST.read_text(encoding="utf-8"))
+    allowlist_text = ALLOWLIST.read_text(encoding="utf-8")
+    request_text = REQUEST.read_text(encoding="utf-8")
+    policy = kotlin_policy(allowlist_text)
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
 
@@ -34,9 +41,10 @@ def main() -> None:
     if not schema_actions:
         fail("schema action enum is missing or empty")
 
-    if allowlist != schema_actions:
-        only_kotlin = sorted(allowlist - schema_actions)
-        only_schema = sorted(schema_actions - allowlist)
+    policy_actions = set(policy)
+    if policy_actions != schema_actions:
+        only_kotlin = sorted(policy_actions - schema_actions)
+        only_schema = sorted(schema_actions - policy_actions)
         fail(f"action drift detected; only_kotlin={only_kotlin}, only_schema={only_schema}")
 
     required = set(schema.get("required", []))
@@ -50,7 +58,31 @@ def main() -> None:
     if schema.get("additionalProperties") is not False:
         fail("schema must reject unknown top-level properties")
 
-    print(f"PASS: contract synchronized across Kotlin/schema/example ({len(allowlist)} actions)")
+    schema_properties = schema.get("properties", {})
+    if "riskLevel" in required or "riskLevel" in schema_properties:
+        fail("riskLevel must not be caller-controlled in the request schema")
+    if "riskLevel" in example:
+        fail("example must not supply caller-controlled riskLevel")
+
+    if re.search(r"val\s+riskLevel\s*:\s*RiskLevel\s*[,)]", request_text):
+        fail("ActionRequest constructor must not accept caller-controlled riskLevel")
+    if "ActionAllowList.riskLevelFor(action)" not in request_text:
+        fail("ActionRequest must derive riskLevel from ActionAllowList")
+    if "?: RiskLevel.HIGH" not in request_text:
+        fail("unknown actions must fail closed to HIGH risk")
+
+    enum_match = re.search(r"enum class RiskLevel\s*\{(.*?)\}", request_text, re.DOTALL)
+    if not enum_match:
+        fail("RiskLevel enum is missing")
+    enum_values = set(re.findall(r"\b(LOW|MEDIUM|HIGH)\b", enum_match.group(1)))
+    unknown_levels = sorted(set(policy.values()) - enum_values)
+    if unknown_levels:
+        fail(f"policy references undefined risk levels: {unknown_levels}")
+
+    print(
+        "PASS: contract synchronized; caller-controlled risk removed; "
+        f"authoritative risk policy covers {len(policy)} actions"
+    )
 
 
 if __name__ == "__main__":

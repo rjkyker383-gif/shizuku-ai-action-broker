@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'app/src/main/java/com/rjkyker/shizukuai/broker/ActionAllowList.kt'
+      - 'app/src/main/java/com/rjkyker/shizukuai/broker/ActionRequest.kt'
       - 'schemas/action.schema.json'
       - 'examples/action.example.json'
       - 'tests/verify_contract.py'
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - 'app/src/main/java/com/rjkyker/shizukuai/broker/ActionAllowList.kt'
+      - 'app/src/main/java/com/rjkyker/shizukuai/broker/ActionRequest.kt'
       - 'schemas/action.schema.json'
       - 'examples/action.example.json'
       - 'tests/verify_contract.py'

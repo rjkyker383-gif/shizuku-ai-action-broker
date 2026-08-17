@@ -2,6 +2,5 @@
   "action": "GET_DEVICE_INFO",
   "reason": "The user requested information about their Android device.",
   "userVisibleSummary": "Read basic device information.",
-  "riskLevel": "LOW",
   "params": {}
 }
