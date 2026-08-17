@@ -4,9 +4,11 @@ data class ActionRequest(
     val action: String,
     val reason: String,
     val userVisibleSummary: String,
-    val riskLevel: RiskLevel,
     val params: Map<String, String> = emptyMap()
-)
+) {
+    val riskLevel: RiskLevel
+        get() = ActionAllowList.riskLevelFor(action) ?: RiskLevel.HIGH
+}
 
 enum class RiskLevel {
     LOW,
