@@ -1,0 +1,16 @@
+name: Public Actions Startup Probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  startup-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Runner started
+        run: |
+          echo runner-started
+          python3 --version
