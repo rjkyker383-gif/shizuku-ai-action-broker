@@ -29,9 +29,16 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Android SDK 35
+        shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          set -euo pipefail
+          command -v sdkmanager
+          sdkmanager --version
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Run unit tests and build debug APK

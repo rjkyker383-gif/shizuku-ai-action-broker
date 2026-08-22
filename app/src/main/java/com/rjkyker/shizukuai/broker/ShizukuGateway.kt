@@ -9,6 +9,14 @@ data class ShizukuStatus(
     val backendUid: Int?
 )
 
+sealed interface PermissionRequestResult {
+    data object AlreadyGranted : PermissionRequestResult
+    data object Requested : PermissionRequestResult
+    data object BinderUnavailable : PermissionRequestResult
+    data object RationaleRequired : PermissionRequestResult
+    data class Failed(val cause: Throwable?) : PermissionRequestResult
+}
+
 object ShizukuGateway {
 
     fun status(): ShizukuStatus {
@@ -38,25 +46,32 @@ object ShizukuGateway {
         )
     }
 
-    fun requestPermission(requestCode: Int): Boolean {
+    fun requestPermission(requestCode: Int): PermissionRequestResult {
         if (!runCatching { Shizuku.pingBinder() }.getOrDefault(false)) {
-            return false
+            return PermissionRequestResult.BinderUnavailable
         }
 
-        if (runCatching {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            }.getOrDefault(false)
-        ) {
-            return true
+        val alreadyGranted = runCatching {
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+
+        if (alreadyGranted) {
+            return PermissionRequestResult.AlreadyGranted
         }
 
-        if (runCatching { Shizuku.shouldShowRequestPermissionRationale() }.getOrDefault(false)) {
-            return false
+        val rationaleRequired = runCatching {
+            Shizuku.shouldShowRequestPermissionRationale()
+        }.getOrDefault(false)
+
+        if (rationaleRequired) {
+            return PermissionRequestResult.RationaleRequired
         }
 
         return runCatching {
             Shizuku.requestPermission(requestCode)
-            true
-        }.getOrDefault(false)
+            PermissionRequestResult.Requested
+        }.getOrElse {
+            PermissionRequestResult.Failed(it)
+        }
     }
 }

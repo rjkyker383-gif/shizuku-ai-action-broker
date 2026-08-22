@@ -78,14 +78,34 @@ class MainActivity : Activity() {
         requestButton = Button(this).apply {
             text = "Request Shizuku permission"
             setOnClickListener {
-                val requested = ShizukuGateway.requestPermission(REQUEST_CODE)
-                if (!requested) {
-                    Toast.makeText(
+                when (ShizukuGateway.requestPermission(REQUEST_CODE)) {
+                    PermissionRequestResult.AlreadyGranted -> refreshStatus()
+
+                    PermissionRequestResult.Requested -> Toast.makeText(
                         this@MainActivity,
-                        "Shizuku is unavailable or permission must be enabled in the Shizuku app.",
+                        "Shizuku permission request sent.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    PermissionRequestResult.BinderUnavailable -> Toast.makeText(
+                        this@MainActivity,
+                        "Shizuku service is not connected.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    PermissionRequestResult.RationaleRequired -> Toast.makeText(
+                        this@MainActivity,
+                        "Enable permission from the Shizuku app, then try again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    is PermissionRequestResult.Failed -> Toast.makeText(
+                        this@MainActivity,
+                        "Permission request failed.",
                         Toast.LENGTH_LONG
                     ).show()
                 }
+
                 refreshStatus()
             }
         }
