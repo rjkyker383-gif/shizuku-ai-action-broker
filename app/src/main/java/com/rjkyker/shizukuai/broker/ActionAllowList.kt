@@ -17,6 +17,6 @@ object ActionAllowList {
     }
 
     fun snapshot(): Set<String> {
-        return allowedActions.toSet()
+        return actionRiskLevels.keys.toSet()
     }
 }
