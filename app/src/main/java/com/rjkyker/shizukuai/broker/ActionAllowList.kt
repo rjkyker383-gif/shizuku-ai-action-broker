@@ -19,4 +19,8 @@ object ActionAllowList {
     fun riskLevelFor(action: String): RiskLevel? {
         return actionRiskLevels[action]
     }
+
+    fun snapshot(): Set<String> {
+        return actionRiskLevels.keys.toSet()
+    }
 }

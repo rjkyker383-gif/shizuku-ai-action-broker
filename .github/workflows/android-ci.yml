@@ -1,0 +1,55 @@
+name: Android Broker CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v sdkmanager
+          sdkmanager --version
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Run unit tests and build debug APK
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify whitespace
+        run: git diff --check
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shizuku-ai-action-broker-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
