@@ -47,6 +47,15 @@ def main() -> None:
         only_schema = sorted(schema_actions - policy_actions)
         fail(f"action drift detected; only_kotlin={only_kotlin}, only_schema={only_schema}")
 
+    forbidden = ("wipe", "reset_password", "remove_admin", "remove_active_admin",
+                 "factory_reset", "clear_device_owner", "clear_profile_owner")
+    destructive = sorted(
+        a for a in policy
+        if any(re.search(rf"(^|_){f}(_|$)", a.lower()) for f in forbidden)
+    )
+    if destructive:
+        fail(f"destructive device-owner actions must not be allow-listed: {destructive}")
+
     required = set(schema.get("required", []))
     missing = sorted(required - set(example))
     if missing:

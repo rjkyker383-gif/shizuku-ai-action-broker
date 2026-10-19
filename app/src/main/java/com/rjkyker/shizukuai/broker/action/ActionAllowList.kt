@@ -36,6 +36,16 @@ object ActionAllowList {
         "datawedge_last" to RiskLevel.LOW,
         "datawedge_query" to RiskLevel.LOW,
         "datawedge_results" to RiskLevel.LOW,
+        // Dhizuku device-owner ops, 1.5.0: non-destructive and reversible only
+        "dhizuku_status" to RiskLevel.LOW,
+        "dhizuku_connect" to RiskLevel.LOW,
+        "dhizuku_scopes" to RiskLevel.LOW,
+        "dhizuku_add_restriction" to RiskLevel.MEDIUM,
+        "dhizuku_clear_restriction" to RiskLevel.MEDIUM,
+        "dhizuku_hide_app" to RiskLevel.MEDIUM,
+        "dhizuku_suspend_app" to RiskLevel.MEDIUM,
+        "dhizuku_perm" to RiskLevel.HIGH,
+        "dhizuku_set_scopes" to RiskLevel.HIGH,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,
