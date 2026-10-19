@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+    </queries>
+
+    <application
+        android:name=".BrokerApp"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ShizukuAiBroker"
+        android:usesCleartextTraffic="true">
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.ShizukuAiBroker">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Accessibility automation for BrokerServer actions -->
+        <service
+            android:name=".accessibility.AgentAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/agent_accessibility_service" />
+        </service>
+
+        <!-- Delegated Admin receiver (null-admin DPM contract) -->
+        <receiver
+            android:name=".receiver.DelegatedAdminProfileReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.NETWORK_LOGS_AVAILABLE" />
+                <action android:name="android.app.action.SECURITY_LOGS_AVAILABLE" />
+                <action android:name="android.app.action.CHOOSE_PRIVATE_KEY_ALIAS" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.admin.delegate"
+                android:value="true" />
+        </receiver>
+
+        <!-- CLI service for worker-admin-* helpers -->
+        <service
+            android:name=".cli.AdminCliService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rjkyker.shizukuai.broker.ADMIN_CLI" />
+            </intent-filter>
+        </service>
+
+        <!-- Broadcast receiver for scopes dump -->
+        <receiver
+            android:name=".cli.AdminCliReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rjkyker.shizukuai.broker.ADMIN_SCOPES" />
+            </intent-filter>
+        </receiver>
+
+        <!-- DataWedge RESULT_ACTION + scan notify (Zebra/Symbol only; soft-fail elsewhere).
+             exported=true required so DataWedge can deliver broadcasts to this package. -->
+        <receiver
+            android:name=".datawedge.DataWedgeResultReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="com.symbol.datawedge.api.RESULT_ACTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.rjkyker.shizukuai.broker.SCAN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Shell-friendly read-only DataWedge query trigger (writes JSON to external files dir) -->
+        <receiver
+            android:name=".datawedge.DataWedgeQueryReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rjkyker.shizukuai.broker.DW_QUERY" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Keeps BrokerServer + DataWedge receiver alive -->
+        <service
+            android:name=".service.BrokerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local on-device automation broker server for the owner's own tools" />
+        </service>
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
