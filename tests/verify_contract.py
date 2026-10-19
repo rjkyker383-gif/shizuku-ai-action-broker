@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BROKER = ROOT / "app/src/main/java/com/rjkyker/shizukuai/broker"
-ALLOWLIST = BROKER / "ActionAllowList.kt"
-REQUEST = BROKER / "ActionRequest.kt"
+ALLOWLIST = BROKER / "action/ActionAllowList.kt"
+REQUEST = BROKER / "action/ActionRequest.kt"
 SCHEMA = ROOT / "schemas/action.schema.json"
 EXAMPLE = ROOT / "examples/action.example.json"
 
@@ -21,7 +21,7 @@ def kotlin_policy(text: str) -> dict[str, str]:
     match = re.search(r"actionRiskLevels\s*=\s*mapOf\((.*?)\)\s*\n", text, re.DOTALL)
     if not match:
         fail("could not locate actionRiskLevels mapOf(...) in ActionAllowList.kt")
-    pairs = re.findall(r'"([A-Z][A-Z0-9_]*)"\s+to\s+RiskLevel\.([A-Z]+)', match.group(1))
+    pairs = re.findall(r'"([A-Za-z][A-Za-z0-9_]*)"\s+to\s+RiskLevel\.([A-Z]+)', match.group(1))
     if not pairs:
         fail("Kotlin action risk policy is empty")
     policy = dict(pairs)

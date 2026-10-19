@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shizuku AI Broker</string>
+    <string name="main_title">Shizuku AI Action Broker</string>
+    <string name="main_subtitle">Localhost broker + delegated admin + accessibility</string>
+    <string name="scopes_label">Active delegated scopes</string>
+    <string name="refresh_scopes">Refresh status</string>
+    <string name="open_accessibility">Open accessibility settings</string>
+    <string name="request_shizuku">Request Shizuku permission</string>
+    <string name="no_scopes">No delegated scopes (or not provisioned)</string>
+    <string name="hint_provision">Grant with:\ndpm set-delegated-scopes com.rjkyker.shizukuai.broker …\nEnable Accessibility → Shizuku AI Broker\nAuthorize Shizuku for this app</string>
+    <string name="accessibility_service_description">UI automation for the local Action Broker (tap/swipe/text/ui dump).</string>
+    <string name="status_template">package: %1$s\nserver: %2$s\naccessibility: %3$s\ndelegated scopes: %4$d\nShizuku binder: %5$s\nShizuku permission: %6$s\nShizuku backend: %7$s</string>
+    <string name="query_datawedge">Query DataWedge</string>
+    <string name="datawedge_label">DataWedge (Zebra)</string>
+    <string name="datawedge_none">DataWedge: no events yet</string>
+</resources>
