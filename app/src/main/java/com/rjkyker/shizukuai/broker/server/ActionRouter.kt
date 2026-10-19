@@ -10,6 +10,8 @@ import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.action.ActionAllowList
 import com.rjkyker.shizukuai.broker.bridge.ShizukuBridge
+import com.rjkyker.shizukuai.broker.action.RiskLevel
+import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeApi
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
@@ -72,6 +74,9 @@ class ActionRouter(private val context: Context) {
                     DataWedgeQuery.run(context, q, t)
                 }
                 "datawedge_results" -> DataWedgeResultStore.readAll(context).put("ok", true)
+                "dhizuku_status", "dhizuku_connect", "dhizuku_scopes", "dhizuku_add_restriction",
+                "dhizuku_clear_restriction", "dhizuku_hide_app", "dhizuku_suspend_app",
+                "dhizuku_perm", "dhizuku_set_scopes" -> handleDhizuku(op, body)
                 else -> err("unknown op: $op")
             }
         } catch (e: Exception) {
@@ -205,6 +210,35 @@ class ActionRouter(private val context: Context) {
         val failed = admin.setPackagesSuspended(arrayOf(pkg), suspended)
         val ok = !failed.contains(pkg)
         return JSONObject().put("ok", ok).put("package", pkg).put("suspended", suspended)
+    }
+
+    private fun handleDhizuku(op: String, body: JSONObject): JSONObject {
+        // HIGH-risk Dhizuku ops require an explicit confirm flag; risk comes from ActionAllowList only.
+        if (ActionAllowList.riskLevelFor(op) == RiskLevel.HIGH && !body.optBoolean("confirm", false)) {
+            return err("$op is HIGH risk; resend with \"confirm\": true")
+        }
+        val pkg = body.optString("package", body.optString("pkg", ""))
+        return when (op) {
+            "dhizuku_status" -> DhizukuGateway.status(context)
+            "dhizuku_connect" -> DhizukuGateway.connect(context)
+            "dhizuku_scopes" -> DhizukuGateway.getScopes()
+            "dhizuku_add_restriction" -> DhizukuGateway.setRestriction(context, body.optString("restriction"), true)
+            "dhizuku_clear_restriction" -> DhizukuGateway.setRestriction(context, body.optString("restriction"), false)
+            "dhizuku_hide_app" -> DhizukuGateway.setHidden(context, pkg, body.optBoolean("hidden", true))
+            "dhizuku_suspend_app" -> DhizukuGateway.setSuspended(context, pkg, body.optBoolean("suspended", true))
+            "dhizuku_perm" -> {
+                val permission = body.optString("permission", body.optString("perm", ""))
+                if (pkg.isEmpty() || permission.isEmpty()) return err("dhizuku_perm requires package + permission")
+                DhizukuGateway.setPermissionGrantState(
+                    context, pkg, permission, AdminCliService.mapGrantState(body.optString("state", "default"))
+                )
+            }
+            "dhizuku_set_scopes" -> {
+                val arr = body.optJSONArray("scopes") ?: return err("dhizuku_set_scopes requires scopes[]")
+                DhizukuGateway.setScopes((0 until arr.length()).map { arr.getString(it) })
+            }
+            else -> err("unknown dhizuku op: $op")
+        }
     }
 
     private fun handleLaunch(body: JSONObject): JSONObject {

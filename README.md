@@ -1,6 +1,6 @@
 # Shizuku AI Action Broker
 
-Android package: `com.rjkyker.shizukuai.broker` (version **1.4.0**)
+Android package: `com.rjkyker.shizukuai.broker` (version **1.5.0**)
 
 Localhost action broker (127.0.0.1:17999) with:
 
@@ -17,7 +17,12 @@ Localhost action broker (127.0.0.1:17999) with:
 - **Authoritative risk policy**: `ActionRequest.riskLevel` is derived from `ActionAllowList`
   (unknown actions fail closed to HIGH); `tests/verify_contract.py` + CI keep schema and policy in sync
 
-See also: `docs/DATAWEDGE_RESULTS.md`, `docs/ALLOWLIST.md`, `docs/DEVICE_SETUP.md`, `docs/ARCHITECTURE.md`,
+- **Dhizuku device-owner sharing (1.5.0)**: Dhizuku-API client; the broker requests
+  `com.rosan.dhizuku.permission.API` on start / **Connect Dhizuku** so it appears in Dhizuku's app list.
+  Once approved, a small set of reversible device-owner ops runs through Dhizuku's binder-wrapped
+  `DevicePolicyManager` (see `docs/DHIZUKU.md`)
+
+See also: `docs/DHIZUKU.md`, `docs/DATAWEDGE_RESULTS.md`, `docs/ALLOWLIST.md`, `docs/DEVICE_SETUP.md`, `docs/ARCHITECTURE.md`,
 `schemas/action.schema.json`, `examples/action.example.json`.
 
 ## Build (host Linux / this box)
@@ -151,6 +156,34 @@ From a host PC via adb port-forward:
 adb forward tcp:17999 tcp:17999
 curl -s http://127.0.0.1:17999/health
 ```
+
+## Dhizuku (device owner without making the broker the DPC)
+
+`dpm set-delegated-scopes` is **not** a shell command; only a device owner can delegate. With
+[Dhizuku](https://github.com/iamr0s/Dhizuku) as Device Owner, open the broker and tap
+**Connect Dhizuku**, then tap **Grant** in Dhizuku's prompt (it auto-denies after ~15 s) or enable
+*Shizuku AI Broker* in Dhizuku's app list.
+
+| op | risk | params |
+|----|------|--------|
+| `dhizuku_status` | LOW | — (installed, granted, owner component, active restrictions) |
+| `dhizuku_connect` | LOW | — (re-sends the permission request) |
+| `dhizuku_scopes` | LOW | — |
+| `dhizuku_add_restriction` / `dhizuku_clear_restriction` | MEDIUM | `restriction` (allow-listed keys only) |
+| `dhizuku_hide_app` | MEDIUM | `package`, `hidden` (default true) |
+| `dhizuku_suspend_app` | MEDIUM | `package`, `suspended` (default true) |
+| `dhizuku_perm` | HIGH, needs `"confirm":true` | `package`, `permission`, `state` granted/denied/default |
+| `dhizuku_set_scopes` | HIGH, needs `"confirm":true` | `scopes[]` (broker only, allow-listed delegations) |
+
+```bash
+curl -s -X POST http://127.0.0.1:17999/action -d '{"op":"dhizuku_status"}'
+curl -s -X POST http://127.0.0.1:17999/action -d '{"op":"dhizuku_add_restriction","restriction":"no_config_wifi"}'
+curl -s -X POST http://127.0.0.1:17999/action -d '{"op":"dhizuku_clear_restriction","restriction":"no_config_wifi"}'
+```
+
+Deliberately **not** exposed: wipe / factory reset, reset password, remove admin / clear owner,
+`no_debugging_features`, `no_modify_accounts`, `no_config_vpn`. System, Dhizuku, Shizuku, Tailscale,
+Termux, DataWedge and the broker itself cannot be hidden or suspended.
 
 ## Grant delegated scopes (device owner / DPC / elevated shell)
 

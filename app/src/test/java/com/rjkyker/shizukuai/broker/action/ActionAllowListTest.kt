@@ -44,6 +44,27 @@ class ActionAllowListTest {
     }
 }
 
+class DhizukuPolicyTest {
+    @Test
+    fun dhizukuOpsAllowedWithExpectedRisk() {
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_status") == RiskLevel.LOW)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_connect") == RiskLevel.LOW)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_add_restriction") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_hide_app") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_suspend_app") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_perm") == RiskLevel.HIGH)
+        assertTrue(ActionAllowList.riskLevelFor("dhizuku_set_scopes") == RiskLevel.HIGH)
+    }
+
+    @Test
+    fun destructiveDeviceOwnerOpsAreNotAllowed() {
+        listOf(
+            "dhizuku_wipe", "wipe_data", "dhizuku_reset_password", "reset_password",
+            "dhizuku_remove_admin", "remove_active_admin", "clear_device_owner", "factory_reset"
+        ).forEach { assertFalse("$it must not be allowed", ActionAllowList.isAllowed(it)) }
+    }
+}
+
 class ActionRequestRiskTest {
     @Test
     fun riskIsDerivedFromPolicy() {

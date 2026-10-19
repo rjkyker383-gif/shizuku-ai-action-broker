@@ -16,6 +16,7 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.service.BrokerService
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
+import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         binding.shizukuPermissionButton.setOnClickListener { requestShizukuPermission() }
+        binding.dhizukuButton.setOnClickListener { connectDhizuku(userInitiated = true) }
         binding.datawedgeButton.setOnClickListener {
             binding.datawedgeStatusText.text = "DataWedge: querying status/version/profiles…"
             Thread({
@@ -77,6 +79,29 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }, "DwQueryUi").start()
+        }
+        refreshStatus()
+        // On start: init Dhizuku and, if not yet granted, request permission once per process so the
+        // broker appears in Dhizuku's app list for the user to approve.
+        if (!dhizukuAutoRequested) {
+            dhizukuAutoRequested = true
+            connectDhizuku(userInitiated = false)
+        }
+    }
+
+    private fun connectDhizuku(userInitiated: Boolean) {
+        val result = DhizukuGateway.requestPermission(applicationContext) { _ ->
+            runOnUiThread { refreshStatus() }
+        }
+        if (userInitiated || result != "dhizuku_not_installed") {
+            val msg = when (result) {
+                "requested" -> "Dhizuku: approve Shizuku AI Broker in the Dhizuku prompt / app list"
+                "already_granted" -> "Dhizuku: already granted"
+                "dhizuku_not_installed" -> "Dhizuku is not installed"
+                "dhizuku_not_running" -> "Dhizuku is not activated / not reachable"
+                else -> "Dhizuku: $result"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
         refreshStatus()
     }
@@ -150,6 +175,13 @@ class MainActivity : AppCompatActivity() {
             perm,
             backend
         )
+        val dz = when {
+            !DhizukuGateway.isInstalled(this) -> "not installed"
+            DhizukuGateway.isGranted() -> "GRANTED (owner ${DhizukuGateway.ownerComponent()?.packageName ?: "?"})"
+            else -> "NOT GRANTED (${DhizukuGateway.lastPermissionResult})"
+        }
+        binding.statusText.append(getString(R.string.dhizuku_status_line, dz))
+        binding.dhizukuButton.isEnabled = !DhizukuGateway.isGranted()
         binding.scopesText.text = if (scopes.isEmpty()) {
             getString(R.string.no_scopes)
         } else {
@@ -162,5 +194,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_CODE_SHIZUKU = 1001
+        @Volatile private var dhizukuAutoRequested = false
     }
 }
