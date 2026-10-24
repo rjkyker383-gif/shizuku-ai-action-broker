@@ -9,6 +9,7 @@
 - Upstream MCP relay: any-wifi URL (Tailscale/tunnel) via SecurePrefs; optional LAN fallback only on matching /24.
 - BrokerService sticky + Shizuku/Dhizuku binder watchdog; battery-optimization exemption prompt.
 - ShellExecutor multiplexer (max 3 background sessions, not a PTY).
+- UI: "No delegated scopes" no longer hides Dhizuku state; button renamed "Request Dhizuku permission" and re-inits the Dhizuku binder on tap.
 
 ## 1.5.0
 - Dhizuku support: `io.github.iamr0s:Dhizuku-API:2.5.4` (2.6.0 requires compileSdk 37),

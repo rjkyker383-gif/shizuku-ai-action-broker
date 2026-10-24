@@ -198,6 +198,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connectDhizuku(userInitiated: Boolean) {
+        // A manual tap re-inits the Dhizuku binder so a Dhizuku that was activated/restarted after
+        // the broker launched is picked up (previously a stale init made the tap a no-op).
+        if (userInitiated && DhizukuGateway.isInstalled(applicationContext)) {
+            DhizukuGateway.reconnect(applicationContext)
+        }
         val result = DhizukuGateway.requestPermission(applicationContext) { _ ->
             runOnUiThread { refreshStatus() }
         }
@@ -293,10 +298,18 @@ class MainActivity : AppCompatActivity() {
         val batt = if (pm?.isIgnoringBatteryOptimizations(packageName) == true) "exempt" else "not exempt"
         binding.statusText.append("\nbattery opt: $batt · MCP auth: required")
         binding.dhizukuButton.isEnabled = !DhizukuGateway.isGranted()
-        binding.scopesText.text = if (scopes.isEmpty()) {
-            getString(R.string.no_scopes)
-        } else {
-            scopes.joinToString("\n")
+        // "Delegated scopes" are Android DPM delegations (DevicePolicyManager.getDelegatedScopes) and
+        // stay empty under Dhizuku unless dhizuku_set_scopes is called. Dhizuku permission itself is a
+        // separate grant, so show it here too instead of a bare "no delegated scopes".
+        val dhizukuScopes = if (DhizukuGateway.isGranted()) {
+            runCatching { com.rosan.dhizuku.api.Dhizuku.getDelegatedScopes()?.toList() }.getOrNull().orEmpty()
+        } else emptyList()
+        val allScopes = (scopes + dhizukuScopes).distinct()
+        binding.scopesText.text = when {
+            allScopes.isNotEmpty() -> allScopes.joinToString("\n")
+            DhizukuGateway.isGranted() -> getString(R.string.no_scopes_dhizuku_granted)
+            DhizukuGateway.isInstalled(this) -> getString(R.string.no_scopes_dhizuku_pending, DhizukuGateway.lastPermissionResult)
+            else -> getString(R.string.no_scopes)
         }
         binding.shizukuPermissionButton.isEnabled =
             shizuku.binderAlive && !shizuku.permissionGranted
