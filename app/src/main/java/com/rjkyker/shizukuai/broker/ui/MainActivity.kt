@@ -1,9 +1,15 @@
 package com.rjkyker.shizukuai.broker.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.rjkyker.shizukuai.broker.R
 import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
@@ -11,18 +17,19 @@ import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.PermissionRequestResult
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.databinding.ActivityMainBinding
-import com.rjkyker.shizukuai.broker.datawedge.DataWedgeApi
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.service.BrokerService
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var admin: DelegatedAdminActionHandler
+    private var tokenVisible = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         runOnUiThread { refreshStatus() }
@@ -44,6 +51,9 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         admin = DelegatedAdminActionHandler(this)
+
+        // Ensure MCP bearer token exists before the UI shows the reveal button.
+        SecurePrefs.ensureMcpToken(applicationContext)
 
         try {
             BrokerService.start(applicationContext)
@@ -80,6 +90,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }, "DwQueryUi").start()
         }
+        binding.saveUpstreamButton.setOnClickListener { saveUpstreamUrl() }
+        binding.mcpTokenButton.setOnClickListener { toggleMcpToken() }
+        binding.mcpTokenButton.setOnLongClickListener {
+            rotateMcpToken()
+            true
+        }
+        binding.batteryButton.setOnClickListener { requestBatteryExemption() }
+
         refreshStatus()
         // On start: init Dhizuku and, if not yet granted, request permission once per process so the
         // broker appears in Dhizuku's app list for the user to approve.
@@ -87,6 +105,96 @@ class MainActivity : AppCompatActivity() {
             dhizukuAutoRequested = true
             connectDhizuku(userInitiated = false)
         }
+        // Prompt once per process for battery exemption (non-blocking; user can dismiss).
+        if (!batteryPromptShown) {
+            batteryPromptShown = true
+            maybePromptBatteryExemption()
+        }
+    }
+
+    private fun saveUpstreamUrl() {
+        val raw = binding.upstreamUrlInput.text?.toString().orEmpty().trim()
+        try {
+            SecurePrefs.setUpstreamMcpUrl(applicationContext, raw)
+            val host = if (raw.isEmpty()) "(cleared — set a Tailscale/tunnel URL)" else raw
+            Toast.makeText(this, "Upstream saved: $host", Toast.LENGTH_LONG).show()
+            // Optional: if user pasted a 192.168 address as primary, warn.
+            if (raw.contains("192.168.") || raw.contains("10.0.") ) {
+                Toast.makeText(
+                    this,
+                    "Warning: that looks LAN-only. Prefer Tailscale 100.x or an https tunnel as primary; put 192.168 in LAN fallback.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            refreshStatus()
+            // Nudge notification text
+            BrokerService.start(applicationContext)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Invalid URL: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun toggleMcpToken() {
+        if (tokenVisible) {
+            tokenVisible = false
+            binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
+            binding.mcpTokenButton.text = getString(R.string.reveal_mcp_token)
+            return
+        }
+        val token = SecurePrefs.ensureMcpToken(applicationContext)
+        tokenVisible = true
+        binding.mcpTokenText.text = token
+        binding.mcpTokenButton.text = getString(R.string.hide_mcp_token)
+        val cm = getSystemService(ClipboardManager::class.java)
+        cm?.setPrimaryClip(ClipData.newPlainText("mcp_token", token))
+        Toast.makeText(this, "MCP token copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun rotateMcpToken() {
+        AlertDialog.Builder(this)
+            .setTitle("Rotate MCP token?")
+            .setMessage("Any Termux scripts / MCP clients using the old token will stop working until you update them.")
+            .setPositiveButton("Rotate") { _, _ ->
+                val token = SecurePrefs.rotateMcpToken(applicationContext)
+                tokenVisible = true
+                binding.mcpTokenText.text = token
+                binding.mcpTokenButton.text = getString(R.string.hide_mcp_token)
+                val cm = getSystemService(ClipboardManager::class.java)
+                cm?.setPrimaryClip(ClipData.newPlainText("mcp_token", token))
+                Toast.makeText(this, "New MCP token generated and copied", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun requestBatteryExemption() {
+        if (Build.VERSION.SDK_INT < 23) return
+        val pm = getSystemService(PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            Toast.makeText(this, "Already ignoring battery optimizations", Toast.LENGTH_SHORT).show()
+            refreshStatus()
+            return
+        }
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
+    private fun maybePromptBatteryExemption() {
+        if (Build.VERSION.SDK_INT < 23) return
+        val pm = getSystemService(PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        // Soft toast only — tapping the dedicated button opens the system dialog.
+        Toast.makeText(
+            this,
+            "Tip: tap “Ignore battery optimizations” so the MCP server survives Doze",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun connectDhizuku(userInitiated: Boolean) {
@@ -150,7 +258,7 @@ class MainActivity : AppCompatActivity() {
         val server = BrokerServer.get()
         val serverStatus = when {
             server == null -> "not started"
-            server.isRunning -> "listening ${BrokerServer.HOST}:${server.port}"
+            server.isRunning -> "listening ${BrokerServer.HOST}:${server.port} (MCP)"
             else -> "stopped"
         }
         val a11y = if (AgentAccessibilityService.isEnabled()) "enabled" else "disabled"
@@ -181,6 +289,9 @@ class MainActivity : AppCompatActivity() {
             else -> "NOT GRANTED (${DhizukuGateway.lastPermissionResult})"
         }
         binding.statusText.append(getString(R.string.dhizuku_status_line, dz))
+        val pm = getSystemService(PowerManager::class.java)
+        val batt = if (pm?.isIgnoringBatteryOptimizations(packageName) == true) "exempt" else "not exempt"
+        binding.statusText.append("\nbattery opt: $batt · MCP auth: required")
         binding.dhizukuButton.isEnabled = !DhizukuGateway.isGranted()
         binding.scopesText.text = if (scopes.isEmpty()) {
             getString(R.string.no_scopes)
@@ -190,10 +301,17 @@ class MainActivity : AppCompatActivity() {
         binding.shizukuPermissionButton.isEnabled =
             shizuku.binderAlive && !shizuku.permissionGranted
         binding.datawedgeStatusText.text = DataWedgeResultReceiver.lastStatusString.get()
+        if (!tokenVisible) {
+            binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
+        }
+        if (!binding.upstreamUrlInput.hasFocus()) {
+            binding.upstreamUrlInput.setText(SecurePrefs.getUpstreamMcpUrl(applicationContext))
+        }
     }
 
     companion object {
         private const val REQUEST_CODE_SHIZUKU = 1001
         @Volatile private var dhizukuAutoRequested = false
+        @Volatile private var batteryPromptShown = false
     }
 }

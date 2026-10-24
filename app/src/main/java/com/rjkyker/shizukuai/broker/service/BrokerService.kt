@@ -9,23 +9,80 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.rjkyker.shizukuai.broker.R
+import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
+import com.rjkyker.shizukuai.broker.mcp.UpstreamMcpRelayClient
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.ui.MainActivity
+import com.rjkyker.shizukuai.broker.util.SecurePrefs
+import rikka.shizuku.Shizuku
 
 /**
- * Foreground service that keeps BrokerServer (127.0.0.1:17999) and the DataWedge
- * result receiver alive when the UI is closed. Started by MainActivity, BootReceiver,
- * or `am start-foreground-service -n com.rjkyker.shizukuai.broker/.service.BrokerService`.
+ * Sticky foreground service that keeps BrokerServer (127.0.0.1:17999, MCP + /action) and the
+ * DataWedge result receiver alive when the UI is closed. Also hosts the Shizuku / Dhizuku binder
+ * watchdog so reconnects after Shizuku restarts without needing MainActivity open.
+ *
+ * Started by MainActivity, BootReceiver, or
+ * `am start-foreground-service -n com.rjkyker.shizukuai.broker/.service.BrokerService`.
  */
 class BrokerService : Service() {
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var bindersRegistered = false
+
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        Log.i(TAG, "Shizuku binder received — re-init Dhizuku + ensure server")
+        try {
+            DhizukuGateway.reconnect(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "Dhizuku reconnect: ${e.message}")
+        }
+        ensureServer()
+        updateNotification()
+    }
+
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        Log.w(TAG, "Shizuku binder dead")
+        updateNotification()
+    }
+
+    private val watchdog = object : Runnable {
+        override fun run() {
+            try {
+                ensureServer()
+                // Re-init Dhizuku if it was installed but the binder went away after a reboot.
+                if (DhizukuGateway.isInstalled(applicationContext) && !DhizukuGateway.isGranted()) {
+                    runCatching { DhizukuGateway.init(applicationContext) }
+                } else if (DhizukuGateway.isInstalled(applicationContext)) {
+                    // Granted but cached DPM may be stale after a Dhizuku restart.
+                    if (!DhizukuGateway.isInitialized) {
+                        runCatching { DhizukuGateway.reconnect(applicationContext) }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "watchdog: ${e.message}")
+            } finally {
+                handler.postDelayed(this, WATCHDOG_MS)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        SecurePrefs.ensureMcpToken(applicationContext)
+        registerBinders()
+        handler.postDelayed(watchdog, WATCHDOG_MS)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
@@ -34,10 +91,28 @@ class BrokerService : Service() {
             Log.w(TAG, "startForeground failed: ${e.message}")
         }
         DataWedgeResultReceiver.ensureRegistered(applicationContext)
+        ensureServer()
+        registerBinders()
+        return START_STICKY
+    }
+
+    private fun ensureServer() {
         if (BrokerServer.get()?.isRunning != true) {
             BrokerServer.startFrom(applicationContext)
         }
-        return START_STICKY
+    }
+
+    private fun registerBinders() {
+        if (bindersRegistered) return
+        try {
+            Shizuku.addBinderReceivedListener(binderReceivedListener)
+            Shizuku.addBinderDeadListener(binderDeadListener)
+            bindersRegistered = true
+            Log.i(TAG, "Shizuku binder listeners registered in BrokerService")
+        } catch (e: Exception) {
+            Log.w(TAG, "register binders: ${e.message}")
+        }
+        runCatching { DhizukuGateway.init(applicationContext) }
     }
 
     private fun startAsForeground() {
@@ -47,25 +122,62 @@ class BrokerService : Service() {
                 NotificationChannel(CHANNEL, "Broker server", NotificationManager.IMPORTANCE_LOW)
             )
         }
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
+    }
+
+    private fun updateNotification() {
+        try {
+            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification())
+        } catch (e: Exception) {
+            Log.w(TAG, "updateNotification: ${e.message}")
+        }
+    }
+
+    private fun buildNotification(): Notification {
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val n: Notification = NotificationCompat.Builder(this, CHANNEL)
+        val shizuku = runCatching { ShizukuGateway.status() }.getOrNull()
+        val upHost = runCatching { UpstreamMcpRelayClient(this).displayHost() }.getOrDefault("")
+        val status = buildString {
+            append("MCP :${BrokerServer.PORT}")
+            append(" · sticky")
+            if (upHost.isNotEmpty()) append(" · up→").append(upHost) else append(" · up unset")
+            if (shizuku != null) {
+                append(if (shizuku.binderAlive && shizuku.permissionGranted) " · Shizuku OK" else " · Shizuku …")
+            }
+        }
+        return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Shizuku AI Broker")
-            .setContentText("Local server on 127.0.0.1:${BrokerServer.PORT}")
+            .setContentText(status)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Local MCP on 127.0.0.1:${BrokerServer.PORT}\n" +
+                    "POST /mcp · GET /ws · POST /action · GET /health\n" +
+                    "Upstream: ${if (upHost.isEmpty()) "(not configured — set in app)" else upHost}\n" +
+                    "Auth required (Bearer token). Boot-persistent."
+            ))
             .setOngoing(true)
             .setContentIntent(pi)
+            .setOnlyAlertOnce(true)
             .build()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_ID, n)
-        }
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(watchdog)
+        if (bindersRegistered) {
+            try {
+                Shizuku.removeBinderReceivedListener(binderReceivedListener)
+                Shizuku.removeBinderDeadListener(binderDeadListener)
+            } catch (_: Exception) {
+            }
+            bindersRegistered = false
+        }
         BrokerServer.get()?.stop()
         super.onDestroy()
     }
@@ -74,6 +186,7 @@ class BrokerService : Service() {
         private const val TAG = "BrokerService"
         private const val CHANNEL = "broker_server"
         private const val NOTIF_ID = 17999
+        private const val WATCHDOG_MS = 30_000L
 
         fun start(context: Context) {
             try {

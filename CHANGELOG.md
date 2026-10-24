@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased / 1.6.0-dev
+- Permanent MCP JSON-RPC on `POST /mcp` + minimal WebSocket at `GET /ws` (same ServerSocket as `/health`/`/action`).
+- Bearer auth (`Authorization` / `X-Broker-Token`); token in SecurePrefs; `/health` stays open with `mcp`/`auth_required` flags.
+- Tools: `exec_shell` (local|upstream route, optional short sessions), `dump_ui_hierarchy`, `perform_gesture`,
+  `manage_dhizuku_policy` (no install/uninstall), `datawedge_query`, `wedge_sync_control`, `upstream_mcp_relay`,
+  `get_system_status`.
+- Upstream MCP relay: any-wifi URL (Tailscale/tunnel) via SecurePrefs; optional LAN fallback only on matching /24.
+- BrokerService sticky + Shizuku/Dhizuku binder watchdog; battery-optimization exemption prompt.
+- ShellExecutor multiplexer (max 3 background sessions, not a PTY).
+
 ## 1.5.0
 - Dhizuku support: `io.github.iamr0s:Dhizuku-API:2.5.4` (2.6.0 requires compileSdk 37),
   `com.rosan.dhizuku.permission.API`, `<queries>` for `com.rosan.dhizuku`.

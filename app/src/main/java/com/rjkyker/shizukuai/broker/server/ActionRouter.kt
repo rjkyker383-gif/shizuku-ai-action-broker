@@ -180,10 +180,20 @@ class ActionRouter(private val context: Context) {
     }
 
     private fun handleShell(body: JSONObject): JSONObject {
+        if (!body.optBoolean("confirm", false)) {
+            return err("shell is HIGH risk; resend with \"confirm\": true")
+        }
         val cmd = body.optString("cmd", body.optString("command", ""))
         if (cmd.isEmpty()) return err("shell requires cmd")
-        val (code, out) = ShizukuBridge.exec(cmd)
-        return JSONObject().put("ok", code == 0).put("code", code).put("stdout", out).put("via", "shell")
+        val r = ShizukuBridge.execSeparate(cmd)
+        return JSONObject()
+            .put("ok", r.exitCode == 0)
+            .put("code", r.exitCode)
+            .put("exit_code", r.exitCode)
+            .put("stdout", r.stdout)
+            .put("stderr", r.stderr)
+            .put("via", r.via)
+            .put("timed_out", r.timedOut)
     }
 
     private fun handleAdminScopes(): JSONObject {

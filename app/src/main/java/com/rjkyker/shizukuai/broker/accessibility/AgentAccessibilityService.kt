@@ -123,6 +123,10 @@ class AgentAccessibilityService : AccessibilityService() {
 
     fun home(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
 
+    fun recents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
+
+    fun notifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+
     private fun dispatchGestureSync(gesture: GestureDescription, timeoutMs: Long = 3000L): Boolean {
         val latch = CountDownLatch(1)
         val ok = AtomicBoolean(false)

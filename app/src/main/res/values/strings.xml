@@ -16,4 +16,15 @@
     <string name="datawedge_none">DataWedge: no events yet</string>
     <string name="connect_dhizuku">Connect Dhizuku (device owner)</string>
     <string name="dhizuku_status_line">\nDhizuku: %1$s</string>
+    <string name="mcp_token_label">MCP bearer token (localhost only)</string>
+    <string name="mcp_token_hidden">••••••••  (tap Reveal)</string>
+    <string name="reveal_mcp_token">Reveal / copy MCP token</string>
+    <string name="hide_mcp_token">Hide token</string>
+    <string name="rotate_mcp_token">Rotate MCP token</string>
+    <string name="battery_exemption">Ignore battery optimizations</string>
+    <string name="mcp_hint">POST http://127.0.0.1:17999/mcp with Authorization: Bearer &lt;token&gt;</string>
+    <string name="upstream_url_label">Upstream MCP URL (any wifi)</string>
+    <string name="upstream_url_hint">https://…tunnel or http://100.x.x.x:8486/mcp — not 192.168 for primary</string>
+    <string name="save_upstream">Save upstream URL</string>
+    <string name="upstream_lan_fallback_label">LAN fallback (optional, home Wi-Fi only)</string>
 </resources>

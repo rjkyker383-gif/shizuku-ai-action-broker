@@ -7,7 +7,7 @@ import android.util.Log
 import com.rjkyker.shizukuai.broker.util.SecureSettingsKeepalive
 
 /**
- * Restarts BrokerService after reboot / app update, then best-effort re-enables
+ * Restarts BrokerService (sticky MCP on :17999) after reboot / app update, then best-effort re-enables
  * ADB / wireless debugging (WRITE_SECURE_SETTINGS or Shizuku shell) so Shizuku
  * and Tailscale ADB can recover without a USB re-pair.
  *
