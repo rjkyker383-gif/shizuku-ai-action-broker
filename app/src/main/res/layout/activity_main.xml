@@ -120,6 +120,77 @@
         android:textAppearance="?attr/textAppearanceCaption"
         android:maxLines="4"
         android:ellipsize="end"
+        app:layout_constraintBottom_toTopOf="@id/upstreamUrlInput"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+
+    <EditText
+        android:id="@+id/upstreamUrlInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/upstream_url_hint"
+        android:inputType="textUri"
+        android:fontFamily="monospace"
+        android:textSize="11sp"
+        android:importantForAutofill="no"
+        app:layout_constraintBottom_toTopOf="@id/saveUpstreamButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/saveUpstreamButton"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/save_upstream"
+        app:layout_constraintBottom_toTopOf="@id/mcpTokenLabel"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <TextView
+        android:id="@+id/mcpTokenLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/mcp_token_label"
+        android:textAppearance="?attr/textAppearanceSubtitle2"
+        app:layout_constraintBottom_toTopOf="@id/mcpTokenText"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <TextView
+        android:id="@+id/mcpTokenText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:fontFamily="monospace"
+        android:text="@string/mcp_token_hidden"
+        android:textIsSelectable="true"
+        android:textAppearance="?attr/textAppearanceCaption"
+        app:layout_constraintBottom_toTopOf="@id/mcpTokenButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mcpTokenButton"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/reveal_mcp_token"
+        app:layout_constraintBottom_toTopOf="@id/batteryButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/batteryButton"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/battery_exemption"
         app:layout_constraintBottom_toTopOf="@id/hintText"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
@@ -130,7 +201,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:fontFamily="monospace"
-        android:text="@string/hint_provision"
+        android:text="@string/mcp_hint"
         android:textAppearance="?attr/textAppearanceCaption"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

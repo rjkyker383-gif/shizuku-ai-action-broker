@@ -42,6 +42,19 @@ class ActionAllowListTest {
         assertTrue(snap.contains("GET_DEVICE_INFO"))
         assertTrue(snap.size >= 24)
     }
+
+    @Test
+    fun mcpToolNamesAreAllowed() {
+        listOf(
+            "exec_shell", "dump_ui_hierarchy", "perform_gesture",
+            "manage_dhizuku_policy", "get_system_status",
+            "upstream_mcp_relay", "wedge_sync_control"
+        ).forEach { op ->
+            assertTrue("$op should be allowed", ActionAllowList.isAllowed(op))
+            assertNotNull(ActionAllowList.riskLevelFor(op))
+        }
+        assertTrue(ActionAllowList.riskLevelFor("exec_shell") == RiskLevel.HIGH)
+    }
 }
 
 class DhizukuPolicyTest {

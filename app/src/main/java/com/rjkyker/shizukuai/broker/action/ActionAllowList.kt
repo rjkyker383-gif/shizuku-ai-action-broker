@@ -46,6 +46,14 @@ object ActionAllowList {
         "dhizuku_suspend_app" to RiskLevel.MEDIUM,
         "dhizuku_perm" to RiskLevel.HIGH,
         "dhizuku_set_scopes" to RiskLevel.HIGH,
+        // MCP tool names — parity with POST /mcp tools/call; risk also enforced in McpToolExecutor
+        "exec_shell" to RiskLevel.HIGH,
+        "dump_ui_hierarchy" to RiskLevel.LOW,
+        "perform_gesture" to RiskLevel.MEDIUM,
+        "manage_dhizuku_policy" to RiskLevel.MEDIUM,
+        "get_system_status" to RiskLevel.LOW,
+        "upstream_mcp_relay" to RiskLevel.MEDIUM,
+        "wedge_sync_control" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

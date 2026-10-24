@@ -61,6 +61,8 @@ object DhizukuGateway {
 
     @Volatile private var initialized = false
     @Volatile private var wrappedDpm: DevicePolicyManager? = null
+    val isInitialized: Boolean get() = initialized
+
     @Volatile var lastPermissionResult: String = "not requested"
         private set
 
@@ -81,6 +83,15 @@ object DhizukuGateway {
             initialized = false
             false
         }
+    }
+
+    /**
+     * Watchdog hook: drop the cached binder-wrapped DPM and re-run Dhizuku.init so a restarted
+     * Dhizuku server is picked up. Returns true when the binder is reachable again.
+     */
+    fun reconnect(context: Context): Boolean {
+        wrappedDpm = null
+        return init(context)
     }
 
     fun isGranted(): Boolean = try {
@@ -224,6 +235,7 @@ object DhizukuGateway {
     }
 
     fun getScopes(): JSONObject {
+        if (!initialized) return err("Dhizuku not initialized; call dhizuku_status/connect first")
         val scopes = Dhizuku.getDelegatedScopes() ?: emptyArray()
         return JSONObject().put("ok", true).put("scopes", JSONArray(scopes.toList()))
     }
