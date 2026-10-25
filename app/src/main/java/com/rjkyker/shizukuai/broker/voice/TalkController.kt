@@ -14,14 +14,17 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import java.io.File
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 
 /**
  * Live talk session: SpeechRecognizer (mic) → LocalAgent (instant on-device answers) or Muse relay
- * → speak reply (Muse audio only if the relay ever returns real Muse audio; otherwise Android TTS,
- * labelled "Device voice" in the UI). After speaking, it listens again until Stop / "stop".
+ * → speak reply. Muse replies carry an MP3 synthesized with Muse's own TTS (default male voice Jordan,
+ * avocado_v2:MAI_03); it is downloaded with the broker token and played with MediaPlayer, labelled
+ * "Muse voice — <name>". Android TTS (preferring a male en-US voice) is used only when no Muse audio
+ * arrives within the timeout or the download/playback fails. After speaking, it listens again until Stop.
  *
  * Mic is used ONLY while a session is active. Never sends SMS/email, never spends, never taps.
  * All recognizer/TTS calls happen on the main thread; network on a worker.
@@ -51,6 +54,9 @@ class TalkController(
     @Volatile var active = false; private set
     private val session = UUID.randomUUID().toString().take(8)
     var preferredVoiceName: String? = null
+    /** One-shot test turn (debug intent): play the reply, then go idle instead of reopening the mic. */
+    @Volatile private var oneShot = false
+    @Volatile var lastPlayedLabel: String = ""; private set
 
     init {
         tts = TextToSpeech(app) { status ->
@@ -79,12 +85,15 @@ class TalkController(
 
     fun applyVoice() {
         val t = tts ?: return
-        val want = preferredVoiceName ?: return
-        englishVoices().firstOrNull { it.name == want }?.let { t.voice = it }
+        val want = preferredVoiceName
+        val chosen = (if (want != null) englishVoices().firstOrNull { it.name == want } else null)
+            ?: pickMaleUsVoice(englishVoices())
+        chosen?.let { runCatching { t.voice = it } }
     }
 
-    /** Honest label: Muse TTS is not available to third-party apps, so this is the device voice. */
-    fun voiceLabel(): String = if (!ttsReady) "Voice: loading…" else "Device voice (Android TTS): ${tts?.voice?.name ?: "default"}"
+    /** Fallback-only label (Muse replies are labelled "Muse voice — <name>" while they play). */
+    fun voiceLabel(): String = if (!ttsReady) "Voice: loading…"
+        else "Muse voice (Jordan) · fallback: ${tts?.voice?.name ?: "device default"}"
 
     fun start() {
         if (active) return
@@ -96,8 +105,19 @@ class TalkController(
         listen()
     }
 
+    /**
+     * Debug-build test hook: run one Muse round trip for [text] as if it had been spoken (no mic), play the
+     * reply, then return to idle. Used by `am start … --es talk_test_text "…"` to verify playback end to end.
+     */
+    fun injectUtterance(text: String) {
+        if (active) return
+        active = true; oneShot = true
+        Log.i(TAG, "talk test turn injected (${text.length} chars)")
+        handleUtterance(text)
+    }
+
     fun stop() {
-        active = false
+        active = false; oneShot = false
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
@@ -175,7 +195,16 @@ class TalkController(
         ui.onState(State.THINKING, "Sending to Muse…")
         worker.execute {
             val reply = try {
-                museClient.ask(text, session, cancelled = { !active })
+                museClient.ask(text, session, cancelled = { !active })?.let { r ->
+                    // Download Muse's MP3 here on the worker so playback starts instantly on main.
+                    if (r.audioUrl == null) return@let r to null
+                    val f = File(app.cacheDir, "muse_voice/${r.id.ifBlank { "reply" }}.mp3")
+                    val bytes = runCatching { museClient.downloadAudio(r.audioUrl, f) }
+                        .onFailure { Log.w(TAG, "muse audio download failed: ${it.javaClass.simpleName}: ${it.message}") }
+                        .getOrNull()
+                    if (bytes != null) Log.i(TAG, "muse audio downloaded id=${r.id} bytes=$bytes voice=${r.voiceLabel}")
+                    r to (if (bytes != null) f else null)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "muse relay: ${e.javaClass.simpleName}")
                 main.post {
@@ -187,11 +216,18 @@ class TalkController(
             main.post {
                 if (!active) return@post
                 if (reply == null) {
+                    Log.i(TAG, "no Muse reply within timeout -> device TTS notice")
                     val msg = "I sent that to Muse. No reply yet — it'll show here when Muse answers."
                     ui.onTurn("Broker", msg); speak(msg)
                 } else {
-                    ui.onTurn(if (reply.audioUrl != null) "Muse (Muse voice)" else "Muse", reply.text)
-                    if (reply.audioUrl != null) playAudio(reply.audioUrl, reply.text) else speak(reply.text)
+                    val (r, file) = reply
+                    if (file != null) {
+                        ui.onTurn("Muse (${r.voiceLabel})", r.text)
+                        playAudio(file, r.voiceLabel, r.text)
+                    } else {
+                        Log.i(TAG, "Muse reply without playable audio -> Android TTS fallback")
+                        ui.onTurn("Muse (device voice fallback)", r.text); speak(r.text)
+                    }
                 }
             }
         }
@@ -207,25 +243,68 @@ class TalkController(
         t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u-${System.nanoTime()}")
     }
 
-    private fun playAudio(url: String, fallbackText: String) {
-        ui.onState(State.SPEAKING, "Muse voice")
+    private fun playAudio(file: File, label: String, fallbackText: String) {
+        endAfterSpeech = false
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+        val vol = am?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: -1
+        if (vol == 0) Log.w(TAG, "media volume is 0 — Muse audio will be silent")
+        ui.onState(State.SPEAKING, if (vol == 0) "Speaking: $label — media volume is 0, turn it up to hear it" else "Speaking: $label")
+        ui.onVoiceLabel(label)
         runCatching {
             player?.release()
             player = MediaPlayer().apply {
-                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).build())
-                setDataSource(url)
-                setOnCompletionListener { main.post { afterSpeaking() } }
-                setOnErrorListener { _, _, _ -> main.post { speak(fallbackText) }; true }
+                setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                setDataSource(file.path)
+                setOnPreparedListener {
+                    Log.i(TAG, "playing $label durationMs=${it.duration}")
+                    it.start()
+                }
+                setOnCompletionListener {
+                    Log.i(TAG, "playback complete: $label")
+                    lastPlayedLabel = label
+                    main.post { afterSpeaking(label) }
+                }
+                setOnErrorListener { _, what, extra ->
+                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra -> Android TTS fallback")
+                    main.post { speak(fallbackText) }; true
+                }
                 prepareAsync()
-                setOnPreparedListener { it.start() }
             }
-        }.onFailure { speak(fallbackText) }
+        }.onFailure {
+            Log.w(TAG, "MediaPlayer setup failed: ${it.javaClass.simpleName} -> Android TTS fallback")
+            speak(fallbackText)
+        }
     }
 
-    private fun afterSpeaking() {
+    private fun afterSpeaking(played: String? = null) {
+        if (oneShot) {
+            oneShot = false; active = false
+            ui.onState(State.IDLE, if (played != null) "Played: $played ✓" else "Test turn done")
+            return
+        }
         if (endAfterSpeech) { endAfterSpeech = false; stop(); return }
         if (active) listen() else ui.onState(State.IDLE, "Mic off")
     }
 
-    companion object { private const val TAG = "TalkController" }
+    companion object {
+        private const val TAG = "TalkController"
+        /** Google TTS en-US male voice ids (offline first). */
+        private val MALE_HINTS = listOf("en-us-x-iom", "en-us-x-iol", "en-us-x-tpd", "male")
+        private val FEMALE_HINTS = listOf("female", "en-us-x-sfg", "en-us-x-tpf", "en-us-x-tpc", "en-us-x-iob")
+
+        /** Prefer a male en-US voice for the fallback; null = keep the engine default. */
+        fun pickMaleUsVoice(voices: List<Voice>): Voice? {
+            val us = voices.filter { it.locale.country.equals("US", true) }
+            fun score(v: Voice): Int {
+                val n = v.name.lowercase()
+                val f = v.features.orEmpty().joinToString(",").lowercase()
+                if (FEMALE_HINTS.any { n.contains(it) || f.contains("gender=female") }) return -1
+                val i = MALE_HINTS.indexOfFirst { n.contains(it) || f.contains("gender=male") }
+                return if (i < 0) -1 else 100 - i * 10 + (if (n.endsWith("local")) 5 else 0)
+            }
+            return us.map { it to score(it) }.filter { it.second >= 0 }.maxByOrNull { it.second }?.first
+        }
+    }
 }

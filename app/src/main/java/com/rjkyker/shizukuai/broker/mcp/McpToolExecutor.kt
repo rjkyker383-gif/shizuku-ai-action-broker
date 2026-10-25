@@ -62,6 +62,8 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_ZEBRA_DW -> ZebraCapabilityLayer.datawedgeProfile(context, args)
                 TOOL_ZEBRA_SCANNER -> ZebraCapabilityLayer.scannerControl(context, args)
                 TOOL_STATUS -> systemStatus()
+                TOOL_A11Y_SCREENSHOT, TOOL_A11Y_UI_TREE, TOOL_A11Y_TAP, TOOL_A11Y_SWIPE,
+                TOOL_A11Y_TEXT, TOOL_A11Y_GLOBAL, TOOL_A11Y_CLICK_TEXT -> a11yTool(name, args)
                 TOOL_DISCOVERY -> JSONObject().put("ok", true).put("manifest", DiscoveryProvider.manifest(context))
                 else -> err("unknown tool: $name")
             }
@@ -166,6 +168,36 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
     private fun dumpUi(args: JSONObject): JSONObject {
         val max = args.optInt("max_nodes", args.optInt("maxNodes", 300)).coerceIn(1, 2000)
         return router.route(JSONObject().put("op", "ui_dump").put("maxNodes", max))
+    }
+
+    // ---------------- a11y_* (accessibility only, no ADB / Shizuku) ----------------
+
+    private fun a11yTool(name: String, args: JSONObject): JSONObject {
+        val a = AgentAccessibilityService.instance
+            ?: return err("accessibility service not connected",
+                "enable Shizuku AI Broker in Settings > Accessibility (or accessibility_ensure on the Muse bridge)")
+        fun num(k: String): Double = args.optDouble(k, Double.NaN)
+        return when (name) {
+            TOOL_A11Y_SCREENSHOT -> a.screenshot(
+                args.optInt("max_width", 720), args.optString("format", "png"), args.optInt("quality", 80))
+            TOOL_A11Y_UI_TREE -> a.uiTree(args.optInt("max_nodes", 400), args.optBoolean("all_windows", false))
+            TOOL_A11Y_TAP -> {
+                val x = num("x"); val y = num("y")
+                if (x.isNaN() || y.isNaN()) return err("a11y_tap requires x,y")
+                JSONObject().put("ok", a.tap(x.toFloat(), y.toFloat(), args.optLong("duration_ms", 60L)))
+                    .put("via", "a11y.dispatchGesture").put("x", x).put("y", y)
+            }
+            TOOL_A11Y_SWIPE -> {
+                val x1 = num("x1"); val y1 = num("y1"); val x2 = num("x2"); val y2 = num("y2")
+                if (x1.isNaN() || y1.isNaN() || x2.isNaN() || y2.isNaN()) return err("a11y_swipe requires x1,y1,x2,y2")
+                JSONObject().put("ok", a.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(),
+                    args.optLong("duration_ms", 300L).coerceIn(1L, 10_000L))).put("via", "a11y.dispatchGesture")
+            }
+            TOOL_A11Y_TEXT -> a.setTextFocused(args.optString("text", "").take(5000))
+            TOOL_A11Y_GLOBAL -> a.globalAction(args.optString("action", ""))
+            TOOL_A11Y_CLICK_TEXT -> a.clickText(args.optString("text", ""), args.optBoolean("exact", false), args.optInt("index", 0))
+            else -> err("unknown a11y tool $name")
+        }
     }
 
     // ---------------- perform_gesture ----------------
@@ -455,6 +487,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
         const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
         const val TOOL_DISCOVERY = "discovery_info"
+        const val TOOL_A11Y_SCREENSHOT = "a11y_screenshot"
+        const val TOOL_A11Y_UI_TREE = "a11y_ui_tree"
+        const val TOOL_A11Y_TAP = "a11y_tap"
+        const val TOOL_A11Y_SWIPE = "a11y_swipe"
+        const val TOOL_A11Y_TEXT = "a11y_text"
+        const val TOOL_A11Y_GLOBAL = "a11y_global"
+        const val TOOL_A11Y_CLICK_TEXT = "a11y_click_text"
+        val A11Y_TOOLS = setOf(TOOL_A11Y_SCREENSHOT, TOOL_A11Y_UI_TREE, TOOL_A11Y_TAP, TOOL_A11Y_SWIPE,
+            TOOL_A11Y_TEXT, TOOL_A11Y_GLOBAL, TOOL_A11Y_CLICK_TEXT)
         private const val KEYCODE_APP_SWITCH = 187
 
         val TOOL_NAMES = setOf(
@@ -462,7 +503,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             TOOL_DATAWEDGE, TOOL_SCAN_HISTORY, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
             TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY
-        )
+        ) + A11Y_TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
 
@@ -677,6 +718,31 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     emptyList()
                 )
             )
+
+            .put(tool(TOOL_A11Y_SCREENSHOT,
+                "Screenshot via AccessibilityService.takeScreenshot (Android 11+, no ADB). Returns image_base64 + an MCP image. LOW-risk, auth required.",
+                JSONObject().put("max_width", prop("integer", "160-1440, default 720 (downscaled)"))
+                    .put("format", enumProp(listOf("png", "jpeg")))
+                    .put("quality", prop("integer", "10-100 (jpeg), default 80")), emptyList()))
+            .put(tool(TOOL_A11Y_UI_TREE,
+                "Window node tree (nested JSON: text, desc, id, class, bounds [l,t,r,b], clickable, focused). No ADB. LOW-risk.",
+                JSONObject().put("max_nodes", prop("integer", "1-3000, default 400"))
+                    .put("all_windows", prop("boolean", "include every interactive window (status bar, IME…)")), emptyList()))
+            .put(tool(TOOL_A11Y_TAP, "Tap at screen x,y via dispatchGesture (no ADB). MEDIUM.",
+                JSONObject().put("x", prop("number")).put("y", prop("number")).put("duration_ms", prop("integer", "default 60")),
+                listOf("x", "y")))
+            .put(tool(TOOL_A11Y_SWIPE, "Swipe x1,y1 -> x2,y2 via dispatchGesture (no ADB). MEDIUM.",
+                JSONObject().put("x1", prop("number")).put("y1", prop("number")).put("x2", prop("number")).put("y2", prop("number"))
+                    .put("duration_ms", prop("integer", "default 300")), listOf("x1", "y1", "x2", "y2")))
+            .put(tool(TOOL_A11Y_TEXT, "ACTION_SET_TEXT on the focused input (replaces its text). No ADB. MEDIUM.",
+                JSONObject().put("text", prop("string")), listOf("text")))
+            .put(tool(TOOL_A11Y_GLOBAL, "Global action BACK|HOME|RECENTS|NOTIFICATIONS|QUICK_SETTINGS (no ADB). MEDIUM.",
+                JSONObject().put("action", enumProp(listOf("BACK", "HOME", "RECENTS", "NOTIFICATIONS", "QUICK_SETTINGS"))),
+                listOf("action")))
+            .put(tool(TOOL_A11Y_CLICK_TEXT,
+                "Find a node by text/content-description (contains, or exact=true) and click it (clickable ancestor, else tap its centre). MEDIUM.",
+                JSONObject().put("text", prop("string")).put("exact", prop("boolean")).put("index", prop("integer", "which match, default 0")),
+                listOf("text")))
 
         private fun tool(name: String, description: String, props: JSONObject, required: List<String>): JSONObject {
             val schema = JSONObject().put("type", "object").put("properties", props)

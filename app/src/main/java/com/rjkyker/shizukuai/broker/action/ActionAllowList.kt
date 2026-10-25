@@ -50,6 +50,13 @@ object ActionAllowList {
         // MCP tool names — parity with POST /mcp tools/call; risk also enforced in McpToolExecutor
         "exec_shell" to RiskLevel.HIGH,
         "dump_ui_hierarchy" to RiskLevel.LOW,
+        "a11y_screenshot" to RiskLevel.LOW,
+        "a11y_ui_tree" to RiskLevel.LOW,
+        "a11y_tap" to RiskLevel.MEDIUM,
+        "a11y_swipe" to RiskLevel.MEDIUM,
+        "a11y_text" to RiskLevel.MEDIUM,
+        "a11y_global" to RiskLevel.MEDIUM,
+        "a11y_click_text" to RiskLevel.MEDIUM,
         "perform_gesture" to RiskLevel.MEDIUM,
         "manage_dhizuku_policy" to RiskLevel.MEDIUM,
         "get_system_status" to RiskLevel.LOW,

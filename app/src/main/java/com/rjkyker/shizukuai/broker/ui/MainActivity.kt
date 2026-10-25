@@ -163,6 +163,7 @@ class MainActivity : AppCompatActivity() {
         binding.scanRepairButton.setOnClickListener { repairDataWedge() }
         binding.roamHardenButton.setOnClickListener { roamHarden() }
         setupTalk()
+        maybeTalkTest(intent)
 
         setupCustomize()
         applyPanelVisibility()
@@ -869,6 +870,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun startTalk() { talk?.start() }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        maybeTalkTest(intent)
+    }
+
+    /**
+     * Debug builds only: `am start -n com.rjkyker.shizukuai.broker/.ui.MainActivity --es talk_test_text "…"`
+     * runs one Talk turn through the Muse relay without the mic and plays the reply (verifies Muse audio).
+     */
+    private fun maybeTalkTest(i: Intent?) {
+        val text = i?.getStringExtra(EXTRA_TALK_TEST)?.trim().orEmpty()
+        if (text.isEmpty()) return
+        i?.removeExtra(EXTRA_TALK_TEST)
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable) return
+        binding.scroll.post { binding.scroll.smoothScrollTo(0, binding.panelTalk.top) }
+        talk?.injectUtterance(text.take(500))
+    }
+
     private fun pickVoice() {
         val t = talk ?: return
         val voices = t.englishVoices()
@@ -1042,6 +1062,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        const val EXTRA_TALK_TEST = "talk_test_text"
         private const val REQUEST_CODE_SHIZUKU = 1001
         private const val TICK_MS = 5_000L
         private const val MIN_REFRESH_MS = 1_000L

@@ -100,6 +100,17 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val r = tools.call(name, args, confirmHeader)
         val isError = !r.optBoolean("ok", false)
+        val img = r.optString("image_base64", "")
+        if (img.isNotEmpty()) {
+            // Screenshot: text summary without the blob + a real MCP image item; structuredContent keeps the base64.
+            val summary = JSONObject(r.toString()).apply { remove("image_base64") }
+            return JSONObject()
+                .put("content", JSONArray()
+                    .put(JSONObject().put("type", "text").put("text", summary.toString()))
+                    .put(JSONObject().put("type", "image").put("data", img).put("mimeType", r.optString("mime", "image/png"))))
+                .put("structuredContent", r)
+                .put("isError", isError)
+        }
         return JSONObject()
             .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", r.toString())))
             .put("structuredContent", r)
@@ -116,7 +127,7 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
     companion object {
         private const val TAG = "McpJsonRpc"
         const val SERVER_NAME = "shizuku-ai-action-broker"
-        const val SERVER_VERSION = "1.8.3-dev"
+        const val SERVER_VERSION = "1.8.4-dev"
         const val DEFAULT_PROTOCOL_VERSION = "2024-11-05"
         val SUPPORTED_PROTOCOL_VERSIONS = setOf("2024-11-05", "2025-03-26", "2025-06-18")
 

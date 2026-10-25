@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.8.4-dev (vc14)
+- **Talk speaks Muse's real voice.** The relay reply can now carry `audio_url` + `voice`; the broker downloads
+  the MP3 with its token (allowed host only, ≤5 MB, MP3 sniffed) and plays it with MediaPlayer, labelled
+  "Muse voice — <name>" (default Jordan, avocado_v2:MAI_03). Android TTS (male en-US preferred unless the user
+  picked a voice) is only the fallback when no audio arrives within 60 s (was 45 s) or playback fails.
+  Media-volume-0 warning on the dashboard. `MuseVoiceClient.parseReply` + unit tests.
+- **Accessibility screen/input without ADB.** New MCP tools `a11y_screenshot` (AccessibilityService.takeScreenshot,
+  API 30+, PNG/JPEG base64 + MCP image content), `a11y_ui_tree`, `a11y_tap`, `a11y_swipe`, `a11y_text`
+  (ACTION_SET_TEXT), `a11y_global` (BACK/HOME/RECENTS/NOTIFICATIONS/QUICK_SETTINGS), `a11y_click_text`.
+  Bearer token required like every MCP tool. Service XML adds `canTakeScreenshot` + `canPerformGestures`.
+- MainActivity survives rotation (configChanges) so a Talk turn isn't killed mid-playback; debug-only
+  `talk_test_text` intent extra runs one mic-free Talk turn for end-to-end verification.
+
 ## Unreleased / 1.8.2-dev
 - **Roam-proof (reboot + new Wi-Fi).** `BrokerServer` now listens on `127.0.0.1` **and** the device's
   Tailscale 100.64/10 IP(s) when present (never `0.0.0.0`, never Wi-Fi/LAN; `NetBind`). Bearer auth still

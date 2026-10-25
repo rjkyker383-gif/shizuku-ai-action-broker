@@ -2,17 +2,24 @@ package com.rjkyker.shizukuai.broker.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
+import android.util.Base64
+import android.view.Display
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Accessibility-backed UI automation: snapshot, tap, swipe, text input, back/home.
@@ -127,6 +134,182 @@ class AgentAccessibilityService : AccessibilityService() {
 
     fun notifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
 
+    // ---------------- a11y_* tools (no ADB) ----------------
+
+    /**
+     * Screenshot through AccessibilityService.takeScreenshot (API 30+, needs canTakeScreenshot in the
+     * service XML). Returns {ok, mime, width, height, image_base64}. Secure (FLAG_SECURE) windows come back black.
+     */
+    fun screenshot(maxWidth: Int = 720, format: String = "png", quality: Int = 80, timeoutMs: Long = 6000L): JSONObject {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return JSONObject().put("ok", false).put("error", "takeScreenshot needs Android 11+ (API 30); this device is API ${Build.VERSION.SDK_INT}")
+                .put("hint", "use the ADB/Shizuku screencap fallback")
+        }
+        synchronized(shotLock) {
+            // Platform limit: one screenshot per ~333 ms per service.
+            val wait = 400L - (System.currentTimeMillis() - lastShotAt)
+            if (wait > 0) Thread.sleep(wait)
+            val latch = CountDownLatch(1)
+            val bmp = AtomicReference<Bitmap?>(null)
+            val errCode = AtomicReference<Int?>(null)
+            takeScreenshot(Display.DEFAULT_DISPLAY, shotExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    try {
+                        val hw = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                        bmp.set(hw?.copy(Bitmap.Config.ARGB_8888, false))
+                        hw?.recycle()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "screenshot convert failed: ${e.message}")
+                    } finally {
+                        runCatching { result.hardwareBuffer.close() }
+                        latch.countDown()
+                    }
+                }
+                override fun onFailure(errorCode: Int) { errCode.set(errorCode); latch.countDown() }
+            })
+            val done = latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            lastShotAt = System.currentTimeMillis()
+            val full = bmp.get()
+            if (!done || full == null) {
+                return JSONObject().put("ok", false)
+                    .put("error", if (!done) "screenshot timeout" else "takeScreenshot failed (code ${errCode.get()})")
+                    .put("hint", "code 1=internal 2=no capability (re-enable the accessibility service) 3=interval too short 4=invalid display")
+            }
+            val mw = maxWidth.coerceIn(160, 1440)
+            val scaled = if (full.width > mw) {
+                Bitmap.createScaledBitmap(full, mw, (full.height.toLong() * mw / full.width).toInt(), true)
+            } else full
+            val jpeg = format.equals("jpeg", true) || format.equals("jpg", true)
+            val out = ByteArrayOutputStream()
+            scaled.compress(if (jpeg) Bitmap.CompressFormat.JPEG else Bitmap.CompressFormat.PNG,
+                quality.coerceIn(10, 100), out)
+            val res = JSONObject().put("ok", true).put("via", "a11y.takeScreenshot")
+                .put("mime", if (jpeg) "image/jpeg" else "image/png")
+                .put("width", scaled.width).put("height", scaled.height)
+                .put("source_width", full.width).put("source_height", full.height)
+                .put("bytes", out.size())
+                .put("image_base64", Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP))
+            if (scaled !== full) scaled.recycle()
+            full.recycle()
+            return res
+        }
+    }
+
+    /** Window node tree as nested JSON (text, desc, id, class, bounds, clickable, focused…). */
+    fun uiTree(maxNodes: Int = 400, allWindows: Boolean = false): JSONObject {
+        val counter = intArrayOf(0)
+        val limit = maxNodes.coerceIn(1, 3000)
+        val out = JSONArray()
+        val roots = mutableListOf<Pair<String, AccessibilityNodeInfo>>()
+        if (allWindows) {
+            runCatching { windows }.getOrNull()?.forEach { w ->
+                w.root?.let { roots.add("window:${w.id}:${w.title ?: ""}:type${w.type}" to it) }
+            }
+        }
+        if (roots.isEmpty()) rootInActiveWindow?.let { roots.add("active" to it) }
+        for ((label, root) in roots) {
+            if (counter[0] >= limit) break
+            out.put(JSONObject().put("window", label).put("package", root.packageName?.toString().orEmpty())
+                .put("root", treeNode(root, counter, limit, 0)))
+            recycleQuietly(root)
+        }
+        return JSONObject().put("ok", roots.isNotEmpty()).put("via", "a11y")
+            .put("node_count", counter[0]).put("truncated", counter[0] >= limit)
+            .put("windows", out)
+            .also { if (roots.isEmpty()) it.put("error", "no active window root (screen off or secure?)") }
+    }
+
+    private fun treeNode(n: AccessibilityNodeInfo, counter: IntArray, limit: Int, depth: Int): JSONObject {
+        counter[0]++
+        val b = Rect(); n.getBoundsInScreen(b)
+        val o = JSONObject()
+            .put("text", n.text?.toString().orEmpty())
+            .put("desc", n.contentDescription?.toString().orEmpty())
+            .put("id", n.viewIdResourceName.orEmpty())
+            .put("class", n.className?.toString()?.substringAfterLast('.').orEmpty())
+            .put("bounds", JSONArray().put(b.left).put(b.top).put(b.right).put(b.bottom))
+            .put("clickable", n.isClickable)
+            .put("focused", n.isFocused || n.isAccessibilityFocused)
+        if (n.isEditable) o.put("editable", true)
+        if (n.isScrollable) o.put("scrollable", true)
+        if (n.isCheckable) o.put("checked", n.isChecked)
+        if (!n.isEnabled) o.put("enabled", false)
+        if (n.childCount > 0 && depth < 60) {
+            val kids = JSONArray()
+            for (i in 0 until n.childCount) {
+                if (counter[0] >= limit) break
+                val c = n.getChild(i) ?: continue
+                try { kids.put(treeNode(c, counter, limit, depth + 1)) } finally { recycleQuietly(c) }
+            }
+            if (kids.length() > 0) o.put("children", kids)
+        }
+        return o
+    }
+
+    /** BACK / HOME / RECENTS / NOTIFICATIONS / QUICK_SETTINGS. */
+    fun globalAction(name: String): JSONObject {
+        val code = when (name.trim().uppercase()) {
+            "BACK" -> GLOBAL_ACTION_BACK
+            "HOME" -> GLOBAL_ACTION_HOME
+            "RECENTS", "APP_SWITCH" -> GLOBAL_ACTION_RECENTS
+            "NOTIFICATIONS" -> GLOBAL_ACTION_NOTIFICATIONS
+            "QUICK_SETTINGS" -> GLOBAL_ACTION_QUICK_SETTINGS
+            else -> return JSONObject().put("ok", false).put("error", "action must be BACK|HOME|RECENTS|NOTIFICATIONS|QUICK_SETTINGS")
+        }
+        return JSONObject().put("ok", performGlobalAction(code)).put("via", "a11y.performGlobalAction").put("action", name.uppercase())
+    }
+
+    /** ACTION_SET_TEXT on the focused input (or first editable). Replaces the field's text. */
+    fun setTextFocused(text: String): JSONObject {
+        val ok = inputText(text)
+        return JSONObject().put("ok", ok).put("via", "a11y.ACTION_SET_TEXT").put("len", text.length)
+            .also { if (!ok) it.put("error", "no focused/editable field on screen") }
+    }
+
+    /**
+     * Find a node whose text or content description matches [text] (contains, case-insensitive; or exact) and click
+     * it: ACTION_CLICK on the nearest clickable ancestor, else a tap gesture at the node's centre.
+     */
+    fun clickText(text: String, exact: Boolean = false, index: Int = 0): JSONObject {
+        val q = text.trim()
+        if (q.isEmpty()) return JSONObject().put("ok", false).put("error", "text required")
+        val root = rootInActiveWindow ?: return JSONObject().put("ok", false).put("error", "no active window")
+        val matches = mutableListOf<AccessibilityNodeInfo>()
+        try {
+            collectMatches(root, q, exact, matches, 50)
+            if (matches.isEmpty()) return JSONObject().put("ok", false).put("error", "no node matching \"$q\"")
+            val node = matches[index.coerceIn(0, matches.size - 1)]
+            val label = (node.text ?: node.contentDescription)?.toString().orEmpty()
+            val b = Rect(); node.getBoundsInScreen(b)
+            var target: AccessibilityNodeInfo? = node
+            var depth = 0
+            while (target != null && depth < 8) {
+                if (target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return JSONObject().put("ok", true).put("via", "a11y.ACTION_CLICK").put("matched", label)
+                        .put("matches", matches.size).put("bounds", JSONArray().put(b.left).put(b.top).put(b.right).put(b.bottom))
+                }
+                target = target.parent; depth++
+            }
+            val ok = tap(b.exactCenterX(), b.exactCenterY())
+            return JSONObject().put("ok", ok).put("via", "a11y.dispatchGesture(center)").put("matched", label)
+                .put("matches", matches.size).put("x", b.centerX()).put("y", b.centerY())
+        } finally {
+            matches.forEach { recycleQuietly(it) }
+            recycleQuietly(root)
+        }
+    }
+
+    private fun collectMatches(n: AccessibilityNodeInfo, q: String, exact: Boolean, out: MutableList<AccessibilityNodeInfo>, max: Int) {
+        if (out.size >= max) return
+        val t = n.text?.toString().orEmpty(); val d = n.contentDescription?.toString().orEmpty()
+        val hit = if (exact) t.equals(q, true) || d.equals(q, true) else t.contains(q, true) || d.contains(q, true)
+        if (hit && n.isVisibleToUser) out.add(AccessibilityNodeInfo.obtain(n))
+        for (i in 0 until n.childCount) {
+            val c = n.getChild(i) ?: continue
+            try { collectMatches(c, q, exact, out, max) } finally { recycleQuietly(c) }
+        }
+    }
+
     private fun dispatchGestureSync(gesture: GestureDescription, timeoutMs: Long = 3000L): Boolean {
         val latch = CountDownLatch(1)
         val ok = AtomicBoolean(false)
@@ -201,6 +384,10 @@ class AgentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AgentA11y"
+
+        private val shotLock = Any()
+        @Volatile private var lastShotAt = 0L
+        private val shotExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "A11yShot").apply { isDaemon = true } }
 
         @Volatile
         var instance: AgentAccessibilityService? = null
