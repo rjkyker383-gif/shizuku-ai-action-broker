@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.action.ActionAllowList
+import com.rjkyker.shizukuai.broker.airtable.AirtableSyncWorker
 import com.rjkyker.shizukuai.broker.action.RiskLevel
 import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
@@ -15,8 +16,10 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.WedgeSyncManager
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.server.ActionRouter
+import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.shell.ShellExecutor
+import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import org.json.JSONArray
 import org.json.JSONObject
@@ -31,6 +34,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
 
     private val admin by lazy { DelegatedAdminActionHandler(context) }
     private val upstream by lazy { UpstreamMcpRelayClient(context) }
+    private val mesh by lazy { BridgeMeshRelay(context) }
 
     fun call(name: String, args: JSONObject, confirmHeader: Boolean = false): JSONObject {
         if (name !in TOOL_NAMES) return err("unknown tool: $name")
@@ -48,6 +52,12 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     args
                 )
                 TOOL_UPSTREAM -> upstreamRelay(args)
+                TOOL_BRIDGE_RELAY -> bridgeRelay(args)
+                TOOL_AIRTABLE -> airtableLog(args)
+                TOOL_WIFI_PRESENCE -> wifiPresence(args)
+                TOOL_ZEBRA_WIFI -> zebraWifi(args, confirmed)
+                TOOL_ZEBRA_DW -> ZebraCapabilityLayer.datawedgeProfile(context, args)
+                TOOL_ZEBRA_SCANNER -> ZebraCapabilityLayer.scannerControl(context, args)
                 TOOL_STATUS -> systemStatus()
                 else -> err("unknown tool: $name")
             }
@@ -284,6 +294,58 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             .put("upstream_host", upstream.displayHost())
     }
 
+    // ---------------- bridge_relay ----------------
+
+    private fun bridgeRelay(args: JSONObject): JSONObject {
+        val bridge = args.optString("bridge", "").lowercase()
+        if (bridge.isBlank()) {
+            return err("bridge_relay requires bridge", "one of ${BridgeMeshRelay.BRIDGES.joinToString("|")}")
+        }
+        val method = args.optString("method", "tools/call").ifBlank { "tools/call" }
+        val timeout = args.optLong("timeout_ms", 15_000L).coerceIn(1_000L, 120_000L)
+        val params = args.optJSONObject("params")
+            ?: args.optJSONObject("payload")
+            ?: JSONObject()
+        return mesh.relay(bridge, method, params, timeout)
+    }
+
+    // ---------------- airtable_log ----------------
+
+    private fun airtableLog(args: JSONObject): JSONObject {
+        val base = args.optString("base", "")
+        val table = args.optString("table", "")
+        if (base.isBlank()) {
+            return err(
+                "airtable_log requires base",
+                "allow-listed: ${AirtableSyncWorker.ALLOWED_BASES.joinToString("|")} (or primary|secondary)"
+            )
+        }
+        if (table.isBlank()) return err("airtable_log requires table")
+        val fields = args.optJSONObject("fields") ?: JSONObject()
+        if (args.optBoolean("flush_only", false)) {
+            return AirtableSyncWorker.flushNow(context)
+        }
+        return AirtableSyncWorker.log(context, base, table, fields)
+    }
+
+    // ---------------- wifi_presence_scan ----------------
+
+    private fun wifiPresence(args: JSONObject): JSONObject {
+        val dur = args.optLong("duration_ms", 4_000L)
+        return WifiPresenceEngine.scan(context, dur)
+    }
+
+    // ---------------- zebra_wifi_config ----------------
+
+    private fun zebraWifi(args: JSONObject, confirmed: Boolean): JSONObject {
+        // Reads (status) are safe; mutating ops are HIGH and need confirm=true.
+        val op = args.optString("op", "status").lowercase()
+        if (op != "status") {
+            needConfirm(TOOL_ZEBRA_WIFI, confirmed)?.let { return it }
+        }
+        return ZebraCapabilityLayer.wifiConfig(context, args)
+    }
+
     // ---------------- get_system_status ----------------
 
     fun systemStatus(): JSONObject {
@@ -327,6 +389,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             .put("battery", battery())
             .put("ignoring_battery_optimizations", pm?.isIgnoringBatteryOptimizations(context.packageName) == true)
             .put("shell_sessions", ShellExecutor.listSessions())
+            .put("bridges", JSONObject().also { b ->
+                for (name in BridgeMeshRelay.BRIDGES) {
+                    val host = mesh.displayHost(name)
+                    b.put(name, JSONObject().put("configured", host.isNotEmpty()).put("host", host))
+                }
+            })
+            .put("airtable", JSONObject()
+                .put("key_set", SecurePrefs.getAirtableApiKey(context).isNotBlank())
+                .put("bases", JSONArray(AirtableSyncWorker.ALLOWED_BASES.toList())))
     }
 
     private fun battery(): JSONObject {
@@ -365,11 +436,19 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_WEDGE_SYNC = "wedge_sync_control"
         const val TOOL_UPSTREAM = "upstream_mcp_relay"
         const val TOOL_STATUS = "get_system_status"
+        const val TOOL_BRIDGE_RELAY = "bridge_relay"
+        const val TOOL_AIRTABLE = "airtable_log"
+        const val TOOL_WIFI_PRESENCE = "wifi_presence_scan"
+        const val TOOL_ZEBRA_WIFI = "zebra_wifi_config"
+        const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
+        const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
         private const val KEYCODE_APP_SWITCH = 187
 
         val TOOL_NAMES = setOf(
             TOOL_EXEC_SHELL, TOOL_DUMP_UI, TOOL_GESTURE, TOOL_DHIZUKU,
-            TOOL_DATAWEDGE, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS
+            TOOL_DATAWEDGE, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
+            TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
+            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER
         )
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
@@ -489,6 +568,82 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     "Broker + upstream host (no secrets) + Shizuku/Dhizuku/a11y/battery/shell sessions.",
                     JSONObject(),
                     emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_BRIDGE_RELAY,
+                    "Relay a JSON-RPC MCP call to a named bridge (magic|war|ether|upstream). Each bridge URL " +
+                        "comes from the app settings (nothing hardcoded); the bridge is health-checked first and " +
+                        "an unreachable bridge returns ok=false instead of a faked result.",
+                    JSONObject()
+                        .put("bridge", enumProp(listOf("magic", "war", "ether", "upstream")))
+                        .put("method", prop("string", "JSON-RPC method, default tools/call"))
+                        .put("params", JSONObject().put("type", "object").put("description", "JSON-RPC params"))
+                        .put("timeout_ms", prop("integer", "default 15000")),
+                    listOf("bridge")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_AIRTABLE,
+                    "Log one record to Airtable. base must be an owner base " +
+                        "(appQkHjQwQuyzVT99 / appQDYTaD6gi64g7M, or primary|secondary). The API key is read from " +
+                        "the app's SecurePrefs at runtime (never hardcoded); if unset the record is queued and the " +
+                        "call returns ok=false 'Airtable key not set'. flush_only=true flushes the queue.",
+                    JSONObject()
+                        .put("base", prop("string", "appQkHjQwQuyzVT99 | appQDYTaD6gi64g7M | primary | secondary"))
+                        .put("table", prop("string", "Airtable table name"))
+                        .put("fields", JSONObject().put("type", "object").put("description", "Airtable field map"))
+                        .put("flush_only", prop("boolean", "Flush the queued records instead of posting")),
+                    listOf("base", "table")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_WIFI_PRESENCE,
+                    "Honest Wi-Fi RSSI/link-variance presence & motion sensor: samples RSSI, link speed, noise " +
+                        "floor and frame delivery, runs variance + a small FFT, and returns a motion/presence score " +
+                        "with confidence. Detects movement/occupancy NEAR the device only. CANNOT see through walls " +
+                        "or identify people — Android does not expose Wi-Fi CSI to apps.",
+                    JSONObject()
+                        .put("duration_ms", prop("integer", "sample window, 1000-30000, default 4000")),
+                    emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_ZEBRA_WIFI,
+                    "No-license Zebra/Android Wi-Fi control via WifiManager/DPM/shell (no Mobility DNA license, no " +
+                        "license bypass). op=status|enable|disable|add|remove|roaming. Mutating ops are HIGH: confirm=true.",
+                    JSONObject()
+                        .put("op", enumProp(listOf("status", "enable", "disable", "add", "remove", "roaming")))
+                        .put("ssid", prop("string", "for add/remove"))
+                        .put("psk", prop("string", "WPA2 passphrase for add"))
+                        .put("setting", enumProp(listOf("scan_always", "verbose", "status")))
+                        .put("value", prop("string", "true|false for roaming setting"))
+                        .put("confirm", prop("boolean", "required for mutating ops")),
+                    listOf("op")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_ZEBRA_DW,
+                    "No-license DataWedge profile CRUD. op=list|active|create|set_config|switch.",
+                    JSONObject()
+                        .put("op", enumProp(listOf("list", "active", "create", "set_config", "switch")))
+                        .put("profile", prop("string", "profile name, default ShizukuAiBroker")),
+                    listOf("op")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_ZEBRA_SCANNER,
+                    "No-license scanner control via DataWedge. op=status|enable|disable|soft_scan_start|soft_scan_stop.",
+                    JSONObject()
+                        .put("op", enumProp(listOf("status", "enable", "disable", "soft_scan_start", "soft_scan_stop")))
+                        .put("profile", prop("string", "profile for enable/disable, default ShizukuAiBroker")),
+                    listOf("op")
                 )
             )
 

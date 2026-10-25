@@ -1,4 +1,4 @@
-# MCP endpoint (broker 1.6.0-dev)
+# MCP endpoint (broker 1.7.0-dev)
 
 The always-on local server binds **only** to `127.0.0.1:17999` (same process as
 `BrokerService` / `BootReceiver`). It speaks MCP JSON-RPC 2.0 over HTTP and a
@@ -61,6 +61,12 @@ curl -s $BASE/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: applicatio
 | `wedge_sync_control` | MEDIUM | `snapshot` \| `apply_local` \| `push_upstream` \| `status`. |
 | `upstream_mcp_relay` | MEDIUM | Forward JSON-RPC to the configured upstream (`method` default `tools/call`, `payload` = params). |
 | `get_system_status` | LOW | Local server + upstream host (no secrets) + Shizuku/Dhizuku/a11y/battery. |
+| `bridge_relay` | MEDIUM | Relay JSON-RPC to a named bridge `magic`/`war`/`ether`/`upstream`. Per-bridge URLs from settings (nothing hardcoded); health-checked first. |
+| `airtable_log` | MEDIUM | Log one record to an owner Airtable base (`appQkHjQwQuyzVT99`/`appQDYTaD6gi64g7M`). API key read from SecurePrefs at runtime; queues + no-ops when unset. |
+| `wifi_presence_scan` | LOW | Honest RSSI/link-variance presence & motion score. **Near-device only; cannot see through walls or identify people** (Android exposes no Wi-Fi CSI). |
+| `zebra_wifi_config` | HIGH | No-license Wi-Fi control (WifiManager/DPM/shell). status is free; mutating ops need `confirm:true`. **No license bypass.** |
+| `zebra_datawedge_profile` | MEDIUM | No-license DataWedge profile CRUD (list/active/create/set_config/switch). |
+| `zebra_scanner_control` | MEDIUM | No-license scanner enable/disable + soft scan via DataWedge. |
 
 ## Upstream MCP (any wifi)
 
@@ -109,6 +115,43 @@ curl -s $BASE/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: applicatio
 
 On failure the relay returns `ok:false` with the real error (HTTP / connect /
 JSON-RPC). It never invents a successful result.
+
+## Bridge mesh, Airtable, Wi-Fi presence, Zebra (1.7.0-dev)
+
+### Bridge mesh relay
+
+`bridge_relay{bridge, method, params, timeout_ms}` forwards a JSON-RPC call to one of
+`magic` / `war` / `ether` / `upstream`. Every bridge URL is read from settings
+(`SecurePrefs.setBridgeUrl(ctx, "magic", "https://…/mcp")`; `upstream` reuses the Upstream MCP
+URL). **No bridge address is hardcoded** — a bridge with no URL set returns `ok:false`. Each
+bridge is health-checked (`GET {origin}/health`) before the call; an unhealthy bridge is not
+relayed to and never returns a faked result.
+
+### Airtable telemetry
+
+`airtable_log{base, table, fields}` posts one record. `base` must be an owner base
+(`appQkHjQwQuyzVT99` or `appQDYTaD6gi64g7M`, or the aliases `primary`/`secondary`). The Airtable
+API key is read from `SecurePrefs` (`airtable_api_key`) **at runtime and is never hardcoded**; set
+it in the app ("Save Airtable key"). With no key the record is queued and the call returns
+`ok:false` with `error:"Airtable key not set"`. A `AirtableSyncWorker` (WorkManager, every 30 min,
+network-constrained) flushes the queue; `airtable_log{…, flush_only:true}` flushes on demand.
+
+### Wi-Fi presence sensor (honest)
+
+`wifi_presence_scan{duration_ms}` samples RSSI, link speed, noise floor and frame delivery, keeps a
+sliding window, computes variance + a small DFT, and returns `motion_score`, `presence_detected`
+and `confidence`. **It detects movement/occupancy near the device only. It CANNOT see through walls
+and CANNOT identify or count people** — Android does not expose Wi-Fi CSI to apps, so true RF
+tomography is impossible from an app. The response always carries `cannot_see_through_walls:true`.
+
+### Zebra no-license capability layer
+
+`zebra_wifi_config`, `zebra_datawedge_profile`, `zebra_scanner_control` use only pathways that work
+**without a paid Mobility DNA license**: DataWedge intents, standard `WifiManager`/`DevicePolicyManager`
+(device-owner via Dhizuku), and Shizuku shell (`cmd wifi`/`svc wifi`). **No license-check bypass,
+reflection into licensing daemons, or forged license keys are implemented.** Features that genuinely
+require a paid license (Fusion Advanced Wi-Fi tiers, Enterprise Browser, OEMConfig premium, premium
+StageNow profiles, …) are intentionally omitted and listed in `ZebraCapabilityLayer.kt`.
 
 ## Persistence
 

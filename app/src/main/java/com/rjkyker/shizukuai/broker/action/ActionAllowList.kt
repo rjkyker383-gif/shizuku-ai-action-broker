@@ -54,6 +54,13 @@ object ActionAllowList {
         "get_system_status" to RiskLevel.LOW,
         "upstream_mcp_relay" to RiskLevel.MEDIUM,
         "wedge_sync_control" to RiskLevel.MEDIUM,
+        // 1.7.0 mesh / telemetry / sensing / no-license Zebra tools
+        "bridge_relay" to RiskLevel.MEDIUM,
+        "airtable_log" to RiskLevel.MEDIUM,
+        "wifi_presence_scan" to RiskLevel.LOW,
+        "zebra_wifi_config" to RiskLevel.HIGH,
+        "zebra_datawedge_profile" to RiskLevel.MEDIUM,
+        "zebra_scanner_control" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

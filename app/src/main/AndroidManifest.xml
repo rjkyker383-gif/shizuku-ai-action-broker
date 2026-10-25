@@ -7,6 +7,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wi-Fi presence sensor + no-license Zebra Wi-Fi control -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- Required to read connected-AP RSSI/SSID on Q+ for the presence sensor -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <!-- Privileged: grant via pm grant / device-owner; used by BootReceiver keepalive -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
