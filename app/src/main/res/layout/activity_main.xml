@@ -192,6 +192,88 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelHotspot"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleHotspot"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_hotspot" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/hotspotStartButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/hotspot_start" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/hotspotStopButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:text="@string/hotspot_stop" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/hotspotShowPassButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/hotspot_show_pass" />
+
+                    <TextView
+                        android:id="@+id/hotspotStatusText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/hotspot_idle" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/wifiDetectionSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:checked="true"
+                        android:textColor="@color/cc_text"
+                        android:text="@string/wifi_detection_label" />
+
+                    <TextView
+                        android:id="@+id/wifiDetectionText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:maxLines="10"
+                        android:text="" />
+
+                    <TextView
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/hotspot_note" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelScans"
                 style="@style/CC.Panel"
                 android:layout_width="match_parent"

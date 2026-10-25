@@ -76,6 +76,7 @@ class BrokerService : Service() {
                 }
                 // Re-assert our accessibility service if it was disabled (Dhizuku/Shizuku settings write).
                 reassertAccessibility()
+                runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
             } catch (e: Exception) {
                 Log.w(TAG, "watchdog: ${e.message}")
             } finally {
@@ -99,6 +100,8 @@ class BrokerService : Service() {
         runCatching { RoamKeeper.start(applicationContext) }
         DataWedgeResultReceiver.ensureRegistered(applicationContext)
         autoRepairDataWedgeOnce()
+        // 1.8.5: Wi-Fi detection is default ON (near-device AP RSSI + presence loop).
+        runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
         handler.postDelayed(watchdog, WATCHDOG_MS)
     }
 
@@ -242,6 +245,7 @@ class BrokerService : Service() {
         }
         runCatching { NsdAdvertiser.unregister(applicationContext) }
         runCatching { RoamKeeper.stop(applicationContext) }
+        runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stop() }
         BrokerServer.get()?.stop()
         super.onDestroy()
     }

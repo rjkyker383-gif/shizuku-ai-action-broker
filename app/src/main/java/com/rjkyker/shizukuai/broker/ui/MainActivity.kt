@@ -99,6 +99,7 @@ class MainActivity : AppCompatActivity() {
     private val panels: List<Pair<String, MaterialCardView>> by lazy {
         listOf(
             "talk" to binding.panelTalk,
+            "hotspot" to binding.panelHotspot,
             "scans" to binding.panelScans,
             "systems" to binding.panelSystems,
             "mesh" to binding.panelMesh,
@@ -163,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         binding.scanRepairButton.setOnClickListener { repairDataWedge() }
         binding.roamHardenButton.setOnClickListener { roamHarden() }
         setupTalk()
+        setupHotspot()
         maybeTalkTest(intent)
 
         setupCustomize()
@@ -202,6 +204,7 @@ class MainActivity : AppCompatActivity() {
             "controls" to R.string.panel_controls, "settings" to R.string.panel_settings,
             "scans" to R.string.panel_scans,
             "talk" to R.string.panel_talk,
+            "hotspot" to R.string.panel_hotspot,
             "scopes" to R.string.scopes_label
         )
         for ((key, _) in panels) {
@@ -280,6 +283,7 @@ class MainActivity : AppCompatActivity() {
         try { io.execute(block) } catch (_: java.util.concurrent.RejectedExecutionException) { }
     }
     @Volatile private var refreshInFlight = false
+    @Volatile private var lastHotspotRefreshAt = 0L
     @Volatile private var refreshQueued = false
     private var lastRefreshAt = 0L
     private var lastScanVersion = -1
@@ -320,6 +324,7 @@ class MainActivity : AppCompatActivity() {
         val sel = selectedScanTs
         ioSafe {
             val st = runCatching { buildUiState(needScans, scanVer, sel) }.getOrNull()
+            if (now - lastHotspotRefreshAt > 30_000L) { lastHotspotRefreshAt = now; refreshHotspot() }
             runOnUiThread {
                 refreshInFlight = false
                 if (st != null && !isFinishing && !isDestroyed) applyUiState(st)
@@ -818,6 +823,86 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    // ---------------- Hotspot / Extender + Wi-Fi detection (1.8.5) ----------------
+
+    private fun setupHotspot() {
+        binding.wifiDetectionSwitch.isChecked = com.rjkyker.shizukuai.broker.sensing.WifiDetection.isEnabled(this)
+        binding.wifiDetectionSwitch.setOnCheckedChangeListener { _, on ->
+            ioSafe {
+                com.rjkyker.shizukuai.broker.sensing.WifiDetection.setEnabled(applicationContext, on)
+                if (on) maybeRequestLocation()
+                refreshHotspot()
+            }
+        }
+        binding.hotspotStartButton.setOnClickListener {
+            binding.hotspotStatusText.text = "Starting hotspot…"
+            ioSafe { val r = com.rjkyker.shizukuai.broker.hotspot.HotspotManager.start(applicationContext); runOnUiThread { showHotspot(r) } }
+        }
+        binding.hotspotStopButton.setOnClickListener {
+            binding.hotspotStatusText.text = "Stopping hotspot…"
+            ioSafe { val r = com.rjkyker.shizukuai.broker.hotspot.HotspotManager.stop(applicationContext); runOnUiThread { showHotspot(r) } }
+        }
+        binding.hotspotShowPassButton.setOnClickListener {
+            val hm = com.rjkyker.shizukuai.broker.hotspot.HotspotManager
+            val pass = hm.passphraseForUi(applicationContext)
+            AlertDialog.Builder(this)
+                .setTitle("Hotspot ${hm.ssid(applicationContext)}")
+                .setMessage("Password (WPA2):\n\n$pass\n\nShown only here. Not sent to Muse, MCP, logs or Airtable.")
+                .setPositiveButton("OK", null)
+                .setNeutralButton("New password") { _, _ -> hm.regeneratePassphrase(applicationContext) }
+                .show()
+        }
+        ioSafe { maybeRequestLocation(); refreshHotspot() }
+    }
+
+    private fun maybeRequestLocation() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread { runCatching { requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION), 4711) } }
+        }
+    }
+
+    /** Off main thread. */
+    private fun refreshHotspot() {
+        val st = runCatching { com.rjkyker.shizukuai.broker.hotspot.HotspotManager.status(applicationContext) }.getOrNull()
+        val wd = runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stateJson(applicationContext, includeAps = true) }.getOrNull()
+        runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            st?.let { showHotspot(it) }
+            wd?.let { showWifiDetection(it) }
+        }
+    }
+
+    private fun showHotspot(st: JSONObject) {
+        val on = st.optBoolean("softap_enabled")
+        binding.hotspotStatusText.text = buildString {
+            append(if (on) "ON · ${st.optString("mode")} · ${st.optString("ssid")}" else "OFF · ${st.optString("ssid")}")
+            append("\nclients=${st.opt("connected_clients")} · upstream=${st.optString("upstream")}")
+            if (st.optString("tether_upstream_iface").isNotEmpty()) append(" (${st.optString("tether_upstream_iface")})")
+            append(" · internet shared=${st.optBoolean("internet_shared")}")
+            append("\nAP band=${st.opt("ap_band")} ch=${st.opt("ap_channel")} · upstream RSSI=${st.opt("upstream_rssi_dbm")} dBm")
+            append("\nrepeater (STA+AP)=${st.opt("sta_ap_concurrency_supported")}: ${st.optString("repeater_note")}")
+            st.optString("error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+            st.optString("softap_error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+        }
+    }
+
+    private fun showWifiDetection(wd: JSONObject) {
+        val aps = wd.optJSONArray("aps")
+        binding.wifiDetectionText.text = buildString {
+            append(if (wd.optBoolean("enabled")) "ON" else "OFF")
+            append(" · ${wd.optInt("last_ap_count")} APs heard · strongest ${wd.opt("strongest_rssi_dbm")} dBm")
+            if (!wd.optBoolean("location_permission")) append("\n⚠ needs Location permission")
+            if (!wd.optBoolean("location_on")) append("\n⚠ Location services are off")
+            wd.optString("last_error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+            if (aps != null) for (i in 0 until minOf(6, aps.length())) {
+                val a = aps.getJSONObject(i)
+                append("\n${a.optInt("rssi_dbm")} dBm  ${a.optString("band")} ch${a.optInt("channel")}  ${a.optString("ssid").ifEmpty { "(hidden)" }.take(22)}")
+            }
+        }
+    }
+
     // ---------------- Talk (live voice agent) ----------------
 
     private var talk: TalkController? = null
@@ -854,7 +939,7 @@ class MainActivity : AppCompatActivity() {
                 binding.talkHistoryText.text = talkHistory.joinToString("\n")
             }
             override fun onVoiceLabel(label: String) { binding.talkVoiceButton.text = label }
-        }).also { it.preferredVoiceName = UiPrefs.voiceName(this) }
+        }).also { it.preferredVoiceName = UiPrefs.voiceName(this); it.museVoice = UiPrefs.museVoice(this) }
         binding.talkButton.setOnClickListener {
             if (talk?.active == true) talk?.stop() else ensureMicThenTalk()
         }
@@ -889,7 +974,26 @@ class MainActivity : AppCompatActivity() {
         talk?.injectUtterance(text.take(500))
     }
 
+    /** Muse voice picker (Static default) + entry for the Android-TTS fallback voice. */
     private fun pickVoice() {
+        val t = talk ?: return
+        val names = MuseVoiceClient.MUSE_VOICES.keys.toList()
+        val labels = (names.map { n -> (if (n == t.museVoice) "● " else "○ ") + "Muse — $n" + if (n == MuseVoiceClient.DEFAULT_VOICE) " (default)" else "" } +
+            listOf("Fallback device voice…")).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Muse voice")
+            .setItems(labels) { _, idx ->
+                if (idx < names.size) {
+                    UiPrefs.setMuseVoice(this, names[idx])
+                    t.museVoice = names[idx]
+                    binding.talkVoiceButton.text = t.voiceLabel()
+                } else pickDeviceVoice()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickDeviceVoice() {
         val t = talk ?: return
         val voices = t.englishVoices()
         if (voices.isEmpty()) { Toast.makeText(this, "No offline English device voices installed", Toast.LENGTH_SHORT).show(); return }

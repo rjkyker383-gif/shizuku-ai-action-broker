@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.8.5-dev (vc15)
+- **Default Talk voice is now Static** (`avocado_v2:vdc_3944`), not Jordan, everywhere: bridge `DEFAULT_VOICE`,
+  broker `MuseVoiceClient.DEFAULT_VOICE`/labels/help, `TalkController`, strings, and the Muse voice spec.
+- **Muse voice picker in the broker.** The Talk voice button now lists the six male Muse voices (Static default,
+  Jordan, Morgan, Bubba, Prophet, Ronan) plus the Android-TTS fallback picker. The chosen name is stored
+  (`UiPrefs.museVoice`) and sent as `voice` with every `POST /voice`; the bridge normalizes it, exposes it on each
+  `/voice/unanswered` item (`voice` + `voice_id`), and Muse's worker synthesizes with it.
+- **Wi-Fi detection is default ON.** New `WifiDetection` background loop (every 45 s) lists nearby access points
+  with RSSI/band/channel as heard by this phone, plus the near-device presence score. Started at boot, by the
+  service watchdog, and surfaced on `/health`, discovery, and a new dashboard panel. New MCP tool `wifi_detection`
+  (status/scan/on/off). Needs Location + ACCESS_FINE_LOCATION; honest near-device RSSI only (no CSI, not
+  through-wall, cannot identify/count/locate people).
+- **Hotspot / Extender.** New `HotspotManager`, dashboard panel, and MCP tools `hotspot_start` / `hotspot_stop` /
+  `hotspot_status` (routed through the Muse bridge too). Privileged soft AP via `cmd wifi start-softap` (Shizuku)
+  to share the phone's internet — repeats Wi-Fi when STA+AP concurrency is supported, else mobile data — with a
+  LocalOnlyHotspot (no-internet) fallback. Default SSID `TC22-Extender`, WPA2, a ≥14-char passphrase generated on
+  the phone and shown only in the app (masked in logs/MCP/Airtable). Status reports client count, upstream
+  (wifi/cellular), AP band+channel, upstream RSSI, and STA+AP concurrency. Honest note: it can't boost other
+  phones' radios; it helps when the TC22 is placed where the signal is stronger.
+
 ## 1.8.4-dev (vc14)
 - **Talk speaks Muse's real voice.** The relay reply can now carry `audio_url` + `voice`; the broker downloads
   the MP3 with its token (allowed host only, ≤5 MB, MP3 sniffed) and plays it with MediaPlayer, labelled

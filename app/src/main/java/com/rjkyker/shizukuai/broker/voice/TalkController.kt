@@ -21,8 +21,8 @@ import java.util.concurrent.Executors
 
 /**
  * Live talk session: SpeechRecognizer (mic) → LocalAgent (instant on-device answers) or Muse relay
- * → speak reply. Muse replies carry an MP3 synthesized with Muse's own TTS (default male voice Jordan,
- * avocado_v2:MAI_03); it is downloaded with the broker token and played with MediaPlayer, labelled
+ * → speak reply. Muse replies carry an MP3 synthesized with Muse's own TTS (default male voice Static,
+ * avocado_v2:vdc_3944, or the Muse voice RJ picked); it is downloaded with the broker token and played with MediaPlayer, labelled
  * "Muse voice — <name>". Android TTS (preferring a male en-US voice) is used only when no Muse audio
  * arrives within the timeout or the download/playback fails. After speaking, it listens again until Stop.
  *
@@ -54,6 +54,8 @@ class TalkController(
     @Volatile var active = false; private set
     private val session = UUID.randomUUID().toString().take(8)
     var preferredVoiceName: String? = null
+    /** Muse voice RJ picked (sent with every utterance); default Static. */
+    var museVoice: String = MuseVoiceClient.DEFAULT_VOICE
     /** One-shot test turn (debug intent): play the reply, then go idle instead of reopening the mic. */
     @Volatile private var oneShot = false
     @Volatile var lastPlayedLabel: String = ""; private set
@@ -93,7 +95,7 @@ class TalkController(
 
     /** Fallback-only label (Muse replies are labelled "Muse voice — <name>" while they play). */
     fun voiceLabel(): String = if (!ttsReady) "Voice: loading…"
-        else "Muse voice (Jordan) · fallback: ${tts?.voice?.name ?: "device default"}"
+        else "Muse voice ($museVoice) · fallback: ${tts?.voice?.name ?: "device default"}"
 
     fun start() {
         if (active) return
@@ -195,7 +197,7 @@ class TalkController(
         ui.onState(State.THINKING, "Sending to Muse…")
         worker.execute {
             val reply = try {
-                museClient.ask(text, session, cancelled = { !active })?.let { r ->
+                museClient.ask(text, session, museVoice, cancelled = { !active })?.let { r ->
                     // Download Muse's MP3 here on the worker so playback starts instantly on main.
                     if (r.audioUrl == null) return@let r to null
                     val f = File(app.cacheDir, "muse_voice/${r.id.ifBlank { "reply" }}.mp3")

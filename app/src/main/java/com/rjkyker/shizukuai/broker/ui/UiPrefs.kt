@@ -39,6 +39,13 @@ object UiPrefs {
         p(ctx).edit().putBoolean(PANEL_PREFIX + panel, visible).apply()
     }
 
+    fun museVoice(ctx: Context): String =
+        com.rjkyker.shizukuai.broker.voice.MuseVoiceClient.normalizeVoice(p(ctx).getString("muse_voice", null))
+
+    fun setMuseVoice(ctx: Context, name: String) {
+        p(ctx).edit().putString("muse_voice", name).apply()
+    }
+
     fun voiceName(ctx: Context): String? = p(ctx).getString("tts_voice", null)
 
     fun setVoiceName(ctx: Context, name: String) {

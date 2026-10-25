@@ -161,6 +161,8 @@ object DiscoveryManifest {
             .put("tool_count", i.tools.size)
             .put("tools", tools)
             .put("limits", JSONObject()
+                .put("wifi_detection", "Default ON: nearby access points with RSSI as heard by this phone + presence score (tool wifi_detection). Near-device only.")
+                .put("hotspot_extender", "hotspot_start/stop/status: shell soft AP sharing the phone's internet (repeater if STA+AP concurrency). Cannot boost other phones' radios.")
                 .put("wifi_presence", "Coarse Wi-Fi RSSI/link-variance presence & motion near the device only. Cannot see through walls, no CSI, cannot identify, count or locate people.")
                 .put("zebra", "Uses only no-license public Zebra/Android APIs (DataWedge intents, WifiManager, DPM). No Mobility DNA license bypass."))
             .put("credentials_included", false)

@@ -214,6 +214,7 @@ class BrokerServer(private val context: Context) {
                         .put("ok", true)
                         .put("port", PORT)
                         .put("accessibility", AgentAccessibilityService.isEnabled())
+                        .put("wifi_detection", runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stateJson(context) }.getOrNull())
                         .put("package", context.packageName)
                         .put("version", versionName())
                         .put("mcp", true)

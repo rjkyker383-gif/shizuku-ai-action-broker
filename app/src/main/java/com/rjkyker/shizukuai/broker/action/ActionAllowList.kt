@@ -66,6 +66,11 @@ object ActionAllowList {
         "bridge_relay" to RiskLevel.MEDIUM,
         "airtable_log" to RiskLevel.MEDIUM,
         "wifi_presence_scan" to RiskLevel.LOW,
+        // 1.8.5 Wi-Fi detection (default on) + Hotspot / Extender
+        "wifi_detection" to RiskLevel.LOW,
+        "hotspot_status" to RiskLevel.LOW,
+        "hotspot_start" to RiskLevel.MEDIUM,
+        "hotspot_stop" to RiskLevel.MEDIUM,
         "zebra_wifi_config" to RiskLevel.HIGH,
         "zebra_datawedge_profile" to RiskLevel.MEDIUM,
         "zebra_scanner_control" to RiskLevel.MEDIUM,

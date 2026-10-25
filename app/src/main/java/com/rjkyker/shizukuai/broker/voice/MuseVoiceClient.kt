@@ -12,8 +12,8 @@ import java.net.URL
  *   GET  https://presocial-endocrinopathic-fumiko.ngrok-free.dev/muse/voice/reply?id=…      -> {reply, audio_url?, voice?}
  *   GET  https://presocial-endocrinopathic-fumiko.ngrok-free.dev/muse/voice/audio/<id>.mp3  (X-Broker-Token)
  *
- * Muse's answer worker synthesizes the reply with Muse's own TTS (default male voice Jordan,
- * avocado_v2:MAI_03) and uploads the MP3 to the relay (POST /voice/answer). The phone downloads that MP3
+ * Muse's answer worker synthesizes the reply with Muse's own TTS (default male voice Static,
+ * avocado_v2:vdc_3944; RJ can pick another male voice and it is sent as "voice" with each utterance) and uploads the MP3 to the relay (POST /voice/answer). The phone downloads that MP3
  * with its token and plays it; Android TTS is only the fallback when no audio arrives in time.
  *
  * Hard rule: only RJ's own host is ever contacted. Auth = the broker's own MCP token (same value the
@@ -22,7 +22,7 @@ import java.net.URL
 class MuseVoiceClient(private val tokenProvider: () -> String) {
 
     data class Reply(val id: String, val text: String, val audioUrl: String?, val voice: String?, val from: String) {
-        /** UI/log label, e.g. "Muse voice — Jordan". */
+        /** UI/log label, e.g. "Muse voice — Static". */
         val voiceLabel: String get() = "Muse voice — ${shortVoiceName(voice)}"
     }
 
@@ -33,9 +33,9 @@ class MuseVoiceClient(private val tokenProvider: () -> String) {
      * If a text-only reply arrives first, keeps polling up to [AUDIO_GRACE_MS] (bounded by the deadline) in case
      * Muse's MP3 lands right after it.
      */
-    fun ask(text: String, session: String, waitMs: Long = DEFAULT_WAIT_MS, cancelled: () -> Boolean = { false }): Reply? {
+    fun ask(text: String, session: String, voice: String = DEFAULT_VOICE, waitMs: Long = DEFAULT_WAIT_MS, cancelled: () -> Boolean = { false }): Reply? {
         val post = http("POST", "$BASE/voice", JSONObject().put("text", text).put("session", session)
-            .put("source", "broker-talk").toString())
+            .put("source", "broker-talk").put("voice", normalizeVoice(voice)).toString())
         val id = post.optString("id")
         if (id.isEmpty()) throw IllegalStateException(post.optString("error", "relay refused"))
         var textOnly: Reply? = parseReply(post.put("id", id))
@@ -124,7 +124,19 @@ class MuseVoiceClient(private val tokenProvider: () -> String) {
         const val DEFAULT_WAIT_MS = 60_000L
         const val AUDIO_GRACE_MS = 8_000L
         const val MAX_AUDIO_BYTES = 5L * 1024 * 1024
-        const val DEFAULT_VOICE = "Jordan"
+        const val DEFAULT_VOICE = "Static"
+        /** Muse's male voices (RJ's rule: male only). Name -> Muse TTS voice id. */
+        val MUSE_VOICES = linkedMapOf(
+            "Static" to "avocado_v2:vdc_3944", "Jordan" to "avocado_v2:MAI_03", "Morgan" to "avocado_v2:casper",
+            "Bubba" to "avocado_v2:vdc_13854", "Prophet" to "avocado_v2:briggs", "Ronan" to "avocado_v2:ronan"
+        )
+
+        /** Known Muse voice name (case-insensitive, or its id) -> canonical name; anything else -> Static. */
+        fun normalizeVoice(v: String?): String {
+            val s = v?.trim().orEmpty()
+            return MUSE_VOICES.entries.firstOrNull { it.key.equals(s, true) || it.value.equals(s, true) }?.key
+                ?: DEFAULT_VOICE
+        }
         private const val POLL_MS = 1_500L
 
         fun isAllowedUrl(url: String): Boolean = runCatching {
@@ -140,7 +152,7 @@ class MuseVoiceClient(private val tokenProvider: () -> String) {
             return Reply(o.optString("id"), t, audio, voice, o.optString("from").ifBlank { "muse" })
         }
 
-        /** "Jordan (avocado_v2:MAI_03)" -> "Jordan"; blank -> default. */
+        /** "Static (avocado_v2:vdc_3944)" -> "Static"; blank -> default. */
         fun shortVoiceName(voice: String?): String {
             val v = voice?.trim().orEmpty()
             if (v.isEmpty()) return DEFAULT_VOICE

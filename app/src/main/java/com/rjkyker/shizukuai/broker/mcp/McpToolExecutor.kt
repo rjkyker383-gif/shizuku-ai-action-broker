@@ -19,6 +19,8 @@ import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.server.ActionRouter
 import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
+import com.rjkyker.shizukuai.broker.sensing.WifiDetection
+import com.rjkyker.shizukuai.broker.hotspot.HotspotManager
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.shell.ShellExecutor
 import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
@@ -58,6 +60,10 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_BRIDGE_RELAY -> bridgeRelay(args)
                 TOOL_AIRTABLE -> airtableLog(args)
                 TOOL_WIFI_PRESENCE -> wifiPresence(args)
+                TOOL_WIFI_DETECTION -> wifiDetection(args)
+                TOOL_HOTSPOT_START -> HotspotManager.start(context, args)
+                TOOL_HOTSPOT_STOP -> HotspotManager.stop(context)
+                TOOL_HOTSPOT_STATUS -> HotspotManager.status(context).put("ok", true)
                 TOOL_ZEBRA_WIFI -> zebraWifi(args, confirmed)
                 TOOL_ZEBRA_DW -> ZebraCapabilityLayer.datawedgeProfile(context, args)
                 TOOL_ZEBRA_SCANNER -> ZebraCapabilityLayer.scannerControl(context, args)
@@ -371,6 +377,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         return AirtableSyncWorker.log(context, base, table, fields)
     }
 
+    // ---------------- wifi_detection (1.8.5, default ON) ----------------
+
+    private fun wifiDetection(args: JSONObject): JSONObject = when (args.optString("op", "status")) {
+        "on" -> { WifiDetection.setEnabled(context, true); WifiDetection.stateJson(context).put("ok", true) }
+        "off" -> { WifiDetection.setEnabled(context, false); WifiDetection.stateJson(context).put("ok", true) }
+        "scan" -> WifiDetection.scanAps(context, requestFresh = true).put("state", WifiDetection.stateJson(context))
+        else -> WifiDetection.stateJson(context, includeAps = args.optBoolean("include_aps", true)).put("ok", true)
+    }
+
     // ---------------- wifi_presence_scan ----------------
 
     private fun wifiPresence(args: JSONObject): JSONObject {
@@ -483,6 +498,10 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_BRIDGE_RELAY = "bridge_relay"
         const val TOOL_AIRTABLE = "airtable_log"
         const val TOOL_WIFI_PRESENCE = "wifi_presence_scan"
+        const val TOOL_WIFI_DETECTION = "wifi_detection"
+        const val TOOL_HOTSPOT_START = "hotspot_start"
+        const val TOOL_HOTSPOT_STOP = "hotspot_stop"
+        const val TOOL_HOTSPOT_STATUS = "hotspot_status"
         const val TOOL_ZEBRA_WIFI = "zebra_wifi_config"
         const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
         const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
@@ -501,7 +520,8 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         val TOOL_NAMES = setOf(
             TOOL_EXEC_SHELL, TOOL_DUMP_UI, TOOL_GESTURE, TOOL_DHIZUKU,
             TOOL_DATAWEDGE, TOOL_SCAN_HISTORY, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
-            TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
+            TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE, TOOL_WIFI_DETECTION,
+            TOOL_HOTSPOT_START, TOOL_HOTSPOT_STOP, TOOL_HOTSPOT_STATUS,
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY
         ) + A11Y_TOOLS
 
@@ -672,6 +692,42 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     JSONObject()
                         .put("duration_ms", prop("integer", "sample window, 1000-30000, default 4000")),
                     emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_WIFI_DETECTION,
+                    "Wi-Fi detection (default ON): background loop that lists nearby access points with RSSI as heard by " +
+                        "this phone, plus the near-device presence score. op=status (default, include_aps) | scan (fresh) | on | off. " +
+                        "Near-device RSSI only: no CSI, not through-wall, cannot identify/count/locate people.",
+                    JSONObject()
+                        .put("op", JSONObject().put("type", "string").put("enum", JSONArray(listOf("status", "scan", "on", "off"))))
+                        .put("include_aps", prop("boolean", "include the AP list in status (default true)")),
+                    emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_HOTSPOT_START,
+                    "Start the Hotspot / Extender: privileged soft AP (cmd wifi start-softap via Shizuku) that shares the " +
+                        "phone's internet (repeats Wi-Fi when STA+AP concurrency is supported, else mobile data). Falls back to a " +
+                        "LocalOnlyHotspot with NO internet. Default SSID TC22-Extender, WPA2, phone-generated passphrase (masked here). " +
+                        HotspotManager.HONEST_NOTE,
+                    JSONObject()
+                        .put("ssid", prop("string", "1-32 chars [A-Za-z0-9 _.-], default TC22-Extender"))
+                        .put("band", JSONObject().put("type", "string").put("enum", JSONArray(listOf("2", "5", "any"))))
+                        .put("security", JSONObject().put("type", "string").put("enum", JSONArray(listOf("wpa2", "wpa3"))))
+                        .put("allow_local_only", prop("boolean", "fall back to a no-internet local-only hotspot (default true)")),
+                    emptyList()
+                )
+            )
+            .put(tool(TOOL_HOTSPOT_STOP, "Stop the Hotspot / Extender (soft AP and any local-only hotspot).", JSONObject(), emptyList()))
+            .put(
+                tool(
+                    TOOL_HOTSPOT_STATUS,
+                    "Hotspot / Extender status: on/off, mode, connected clients, upstream (wifi/cellular), AP band+channel, " +
+                        "upstream RSSI, STA+AP concurrency (repeater) support. Passphrase masked. " + HotspotManager.HONEST_NOTE,
+                    JSONObject(), emptyList()
                 )
             )
             .put(

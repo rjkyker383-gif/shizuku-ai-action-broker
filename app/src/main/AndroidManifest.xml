@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Required to read connected-AP RSSI/SSID on Q+ for the presence sensor -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 1.8.5 Hotspot / Extender: LocalOnlyHotspot fallback on Android 13+ -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <!-- Privileged: grant via pm grant / device-owner; used by BootReceiver keepalive -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />

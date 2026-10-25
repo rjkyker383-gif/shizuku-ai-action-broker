@@ -38,6 +38,7 @@ object BrokerStatusSnapshot {
             .put("upstream_configured", SecurePrefs.getUpstreamMcpUrl(ctx).isNotBlank())
             .put("airtable_key_set", SecurePrefs.getAirtableApiKey(ctx).isNotBlank())
             .put("wifi_presence", WifiPresenceEngine.stateJson())
+            .put("wifi_detection", com.rjkyker.shizukuai.broker.sensing.WifiDetection.stateJson(ctx))
             .put("mdns", JSONObject()
                 .put("registered", NsdAdvertiser.isRegistered())
                 .put("types", org.json.JSONArray(NsdAdvertiser.registeredTypes())))

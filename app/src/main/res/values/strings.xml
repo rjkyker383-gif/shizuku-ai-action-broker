@@ -71,9 +71,16 @@
     <string name="talk_stop">■ STOP</string>
     <string name="talk_idle">Mic off. Tap TALK and speak — it answers out loud and keeps listening until you tap STOP or say “stop”.</string>
     <string name="talk_voice_loading">Voice: loading…</string>
-    <string name="talk_note">Quick on-phone answers (status, “what does my last scan mean”) are instant. Everything else goes to Muse through your own ngrok host, and Muse answers out loud in its own natural male voice (Jordan by default) as an MP3. If no Muse audio arrives within 60 s, the phone reads the reply with its best male device voice instead. The mic is only on during a session. It never texts, emails, calls, or spends.</string>
+    <string name="talk_note">Quick on-phone answers (status, “what does my last scan mean”) are instant. Everything else goes to Muse through your own ngrok host, and Muse answers out loud in its own natural male voice (Static by default; tap the voice button to pick Jordan, Morgan, Bubba, Prophet or Ronan) as an MP3. If no Muse audio arrives within 60 s, the phone reads the reply with its best male device voice instead. The mic is only on during a session. It never texts, emails, calls, or spends.</string>
     <string name="talk_mic_denied">Microphone permission is needed for Talk.</string>
     <string name="repair_datawedge">Repair DataWedge profile (scans → this app, all apps)</string>
     <string name="roam_harden">Roam-proof setup (Tailscale always-on + Doze allowlist)</string>
     <string name="scans_hint">Tap a scan below to show it. “What this means” explains each field in plain English; raw/hidden bytes follow.</string>
+    <string name="panel_hotspot">◉ HOTSPOT · EXTENDER · WI-FI DETECTION</string>
+    <string name="hotspot_start">Start hotspot</string>
+    <string name="hotspot_stop">Stop hotspot</string>
+    <string name="hotspot_show_pass">Show hotspot password</string>
+    <string name="hotspot_idle">Hotspot: tap Refresh or Start to read status…</string>
+    <string name="wifi_detection_label">Wi-Fi detection (nearby AP signal + presence)</string>
+    <string name="hotspot_note">Shares this phone\'s internet as "TC22-Extender" (WPA2, password made on this phone). If the phone can keep Wi-Fi and the hotspot on together it repeats your Wi-Fi; otherwise it shares mobile data. It can\'t boost other phones\' radios. It helps when the TC22 is placed where the signal is stronger. Wi-Fi detection only measures signal strength at this phone: no through-wall view, no tracking of people.</string>
 </resources>
