@@ -53,15 +53,15 @@ class BarcodeLabActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, dp(14))
         }, matchWrap())
 
-        valueInput = field("Scanned or replacement data", initial)
-        symbologyInput = field("Symbology (optional, e.g. UPC-A)", last?.optString("label_type", "").orEmpty())
-        operationInput = field("Transform operation", "prefix")
-        argumentInput = field("Argument / search text", "RJ-")
-        replacementInput = field("Replacement text", "")
-        productNameInput = field("Local product name", "")
-        priceInput = field("Local catalog price (e.g. 12.99)", "")
-        currencyInput = field("Currency code", "USD")
-        formatInput = field("Output barcode format", "QR_CODE")
+        valueInput = field(content, "Scanned or replacement data", initial)
+        symbologyInput = field(content, "Symbology (optional, e.g. UPC-A)", last?.optString("label_type", "").orEmpty())
+        operationInput = field(content, "Transform operation", "prefix")
+        argumentInput = field(content, "Argument / search text", "RJ-")
+        replacementInput = field(content, "Replacement text", "")
+        productNameInput = field(content, "Local product name", "")
+        priceInput = field(content, "Local catalog price (e.g. 12.99)", "")
+        currencyInput = field(content, "Currency code", "USD")
+        formatInput = field(content, "Output barcode format", "QR_CODE")
 
         addButton(content, "LOAD LATEST SCAN") {
             val scan = DataWedgeResultReceiver.lastScanJson.get()
@@ -191,7 +191,7 @@ class BarcodeLabActivity : AppCompatActivity() {
 
     private fun currentValue(): String = valueInput.text.toString()
 
-    private fun field(hintText: String, initial: String): EditText {
+    private fun field(parent: LinearLayout, hintText: String, initial: String): EditText {
         val edit = EditText(this).apply {
             hint = hintText
             setText(initial)
@@ -202,8 +202,7 @@ class BarcodeLabActivity : AppCompatActivity() {
             maxLines = 3
             setPadding(dp(10), dp(4), dp(10), dp(4))
         }
-        val holder = findViewById<LinearLayout?>(android.R.id.content)?.getChildAt(0) as? LinearLayout
-        holder?.addView(edit, matchWrap())
+        parent.addView(edit, matchWrap())
         return edit
     }
 
