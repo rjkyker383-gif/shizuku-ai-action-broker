@@ -58,5 +58,7 @@ dependencies {
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     // Local barcode label generation.
     implementation("com.google.zxing:core:3.5.4")
+    // Use the real JSON implementation in local JVM tests instead of Android's throwing stub.
+    testImplementation("org.json:json:20260814")
     testImplementation("junit:junit:4.13.2")
 }
