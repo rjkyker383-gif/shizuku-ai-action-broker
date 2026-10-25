@@ -45,6 +45,25 @@ class BarcodeGhostEngineTest {
     }
 
     @Test
+    fun naturalLanguagePlannerReturnsAnUnappliedPreview() {
+        val result = BarcodeAiPlanner.plan("12345", "Add RJ- to the beginning")
+        assertTrue(result.optBoolean("planned"))
+        assertFalse(result.optBoolean("applied"))
+        assertEquals("RJ-12345", result.optString("preview_output"))
+        assertEquals("prefix", result.optJSONObject("proposal")?.optString("operation"))
+    }
+
+    @Test
+    fun naturalLanguagePlannerDoesNotGuessUnsupportedInstructions() {
+        val result = BarcodeAiPlanner.plan("12345", "Synchronize with the warehouse")
+        assertFalse(result.optBoolean("ok"))
+        assertFalse(result.optBoolean("planned"))
+        assertFalse(result.optBoolean("applied"))
+    }
+
+    @Test
+    fun onlyRegisteredBgxCommandsAreAccepted() {
+    @Test
     fun onlyRegisteredBgxCommandsAreAccepted() {
         val good = BarcodeGhostEngine.parseCommand("BGX:1|TYPE=GAME|ID=NEON_MAZE|VERSION=1")
         assertTrue(good is CommandParseResult.Valid)
