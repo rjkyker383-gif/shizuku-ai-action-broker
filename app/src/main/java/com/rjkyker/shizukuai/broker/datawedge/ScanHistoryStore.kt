@@ -16,6 +16,8 @@ object ScanHistoryStore {
     const val MAX = 200
     private val scans = CopyOnWriteArrayList<JSONObject>()
     @Volatile private var loaded = false
+    /** Bumped on every add/clear so the UI can skip re-rendering an unchanged scan panel. */
+    val version = java.util.concurrent.atomic.AtomicInteger(0)
 
     @Synchronized
     fun ensureLoaded(context: Context) {
@@ -32,6 +34,7 @@ object ScanHistoryStore {
             scans.clear()
             // file is oldest→newest; we want newest first in memory
             scans.addAll(tmp.reversed())
+            version.incrementAndGet()
         } catch (e: Exception) {
             Log.w(TAG, "load: ${e.message}")
         }
@@ -42,6 +45,7 @@ object ScanHistoryStore {
         ensureLoaded(context)
         scans.add(0, scan)
         while (scans.size > MAX) scans.removeAt(scans.size - 1)
+        version.incrementAndGet()
         persist(context, scan)
     }
 
@@ -61,6 +65,7 @@ object ScanHistoryStore {
 
     fun clear(context: Context) {
         scans.clear()
+        version.incrementAndGet()
         for (d in DataWedgeResultStore.dirs(context)) {
             try { File(d, "scans.jsonl").writeText("") } catch (_: Exception) {}
         }

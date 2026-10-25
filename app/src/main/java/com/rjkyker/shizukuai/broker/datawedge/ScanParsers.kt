@@ -116,6 +116,8 @@ object ScanParsers {
         }
         // Heuristic: starts with known fixed-length AI
         if (s.isEmpty() || !s[0].isDigit()) return null
+        // A bare 8/12/13-digit retail code (EAN/UPC) is NOT a GS1 element string.
+        if (aimId == null && s.all { it.isDigit() } && s.length in listOf(8, 12, 13) && gtinCheckDigitOk(s)) return null
         val ais = JSONArray()
         var i = 0
         val knownFixed = mapOf(
@@ -476,6 +478,8 @@ object ScanParsers {
             .put("decode_data", segments)
             .put("parsers", parsers)
         noteStructuredAppendOrEci(labelType, decodedText)?.let { out.put("structure_note", it) }
+        // Plain-English "What this means" (only what is encoded; never invented).
+        runCatching { out.put("english", ScanExplainer.explain(out)) }
         return out
     }
 }

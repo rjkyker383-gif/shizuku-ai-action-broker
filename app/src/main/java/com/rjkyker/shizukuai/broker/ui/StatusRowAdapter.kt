@@ -6,6 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.rjkyker.shizukuai.broker.R
@@ -16,25 +18,32 @@ data class StatusRow(
     val value: String,
     val state: Led,
     /** Non-null → show a COPY button that copies this exact text. Never a secret. */
-    val copyText: String? = null
+    val copyText: String? = null,
+    /** Stable identity for DiffUtil + row-tap callbacks (defaults to label). */
+    val key: String = label
 )
 
 enum class Led(val colorRes: Int) {
     OK(R.color.led_ok), WARN(R.color.led_warn), BAD(R.color.led_bad), INFO(R.color.led_info), OFF(R.color.led_off)
 }
 
+/**
+ * DiffUtil-backed (ListAdapter) so a 5 s status tick only rebinds rows whose text/LED changed,
+ * instead of notifyDataSetChanged() relayouting the whole dashboard every tick.
+ */
 class StatusRowAdapter(
-    private val onCopy: (label: String, text: String) -> Unit
-) : RecyclerView.Adapter<StatusRowAdapter.VH>() {
+    private val onCopy: (label: String, text: String) -> Unit,
+    private val onRowClick: ((key: String) -> Unit)? = null
+) : ListAdapter<StatusRow, StatusRowAdapter.VH>(DIFF) {
 
-    private var rows: List<StatusRow> = emptyList()
     var accent: Int = 0
-        set(value) { field = value; notifyDataSetChanged() }
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount)
+        }
 
-    fun submit(newRows: List<StatusRow>) {
-        rows = newRows
-        notifyDataSetChanged()
-    }
+    fun submit(newRows: List<StatusRow>) = submitList(newRows)
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val led: View = v.findViewById(R.id.rowLed)
@@ -46,15 +55,14 @@ class StatusRowAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
         VH(LayoutInflater.from(parent.context).inflate(R.layout.item_status_row, parent, false))
 
-    override fun getItemCount(): Int = rows.size
-
     override fun onBindViewHolder(h: VH, position: Int) {
-        val r = rows[position]
+        val r = getItem(position)
         val ctx = h.itemView.context
         h.led.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(ctx, r.state.colorRes))
         h.label.text = r.label
         h.value.text = r.value
         h.itemView.contentDescription = "${r.label}: ${r.value}"
+        if (onRowClick != null) h.itemView.setOnClickListener { onRowClick.invoke(r.key) } else h.itemView.setOnClickListener(null)
         if (r.copyText != null) {
             h.copy.visibility = View.VISIBLE
             if (accent != 0) h.copy.setTextColor(accent)
@@ -62,6 +70,13 @@ class StatusRowAdapter(
         } else {
             h.copy.visibility = View.GONE
             h.copy.setOnClickListener(null)
+        }
+    }
+
+    companion object {
+        val DIFF = object : DiffUtil.ItemCallback<StatusRow>() {
+            override fun areItemsTheSame(a: StatusRow, b: StatusRow) = a.key == b.key
+            override fun areContentsTheSame(a: StatusRow, b: StatusRow) = a == b
         }
     }
 }

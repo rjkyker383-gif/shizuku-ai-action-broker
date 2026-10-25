@@ -30,10 +30,10 @@ class DiscoveryManifestTest {
         bridges: Map<String, String> = SecurePrefs.BRIDGE_NAMES.associateWith { SecurePrefs.defaultBridgeUrl(it) }
     ) = DiscoveryManifest.Inputs(
         appId = "com.rjkyker.shizukuai.broker", appName = "Shizuku AI Broker",
-        versionName = "1.8.1-dev", versionCode = 11,
+        versionName = "1.8.2-dev", versionCode = 12,
         manufacturer = "Zebra Technologies", model = "TC22", androidRelease = "14", sdkInt = 34,
         localHost = "127.0.0.1", port = 17999, serverRunning = true,
-        serverName = "shizuku-ai-action-broker", serverVersion = "1.8.1-dev",
+        serverName = "shizuku-ai-action-broker", serverVersion = "1.8.2-dev",
         protocolVersions = listOf("2024-11-05", "2025-03-26", "2025-06-18"),
         defaultProtocolVersion = "2024-11-05",
         tailscaleAddresses = listOf("100.95.242.123"),
@@ -48,7 +48,7 @@ class DiscoveryManifestTest {
         val m = DiscoveryManifest.build(inputs())
         assertEquals(DiscoveryManifest.SCHEMA, m.getString("schema"))
         assertEquals("com.rjkyker.shizukuai.broker", m.getJSONObject("app").getString("id"))
-        assertEquals("1.8.1-dev", m.getJSONObject("app").getString("version"))
+        assertEquals("1.8.2-dev", m.getJSONObject("app").getString("version"))
         assertEquals("TC22", m.getJSONObject("device").getString("model"))
         assertTrue(m.getJSONObject("auth").getBoolean("required"))
         assertEquals("bearer", m.getJSONObject("auth").getString("scheme"))
@@ -156,5 +156,19 @@ class DiscoveryManifestTest {
         val m = DiscoveryManifest.build(inputs())
         val limits = m.getJSONObject("limits").getString("wifi_presence").lowercase()
         assertTrue(limits.contains("cannot see through walls"))
+    }
+
+    @Test
+    fun tailscaleDirectWhenBound() {
+        val notBound = DiscoveryManifest.build(inputs())
+        val c0 = (0 until notBound.getJSONArray("connections").length()).map { notBound.getJSONArray("connections").getJSONObject(it) }
+            .first { it.getString("type") == "tailscale" }
+        org.junit.Assert.assertFalse(c0.getBoolean("direct_mcp"))
+        val bound = DiscoveryManifest.build(inputs().copy(boundAddresses = listOf("127.0.0.1", "100.95.242.123")))
+        val c1 = (0 until bound.getJSONArray("connections").length()).map { bound.getJSONArray("connections").getJSONObject(it) }
+            .first { it.getString("type") == "tailscale" }
+        org.junit.Assert.assertTrue(c1.getBoolean("direct_mcp"))
+        assertEquals("http://100.95.242.123:17999/mcp", c1.getString("mcp_http"))
+        assertTrue(c1.getBoolean("auth_required"))
     }
 }

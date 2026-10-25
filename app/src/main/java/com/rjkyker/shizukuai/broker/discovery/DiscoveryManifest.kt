@@ -52,7 +52,9 @@ object DiscoveryManifest {
         val mdnsServiceName: String,
         val mdnsRegistered: Boolean,
         /** Real secret values (MCP token, Airtable key, bridge tokens…) used ONLY to redact. */
-        val knownSecrets: List<String> = emptyList()
+        val knownSecrets: List<String> = emptyList(),
+        /** Addresses the server is actually listening on (127.0.0.1 + Tailscale IPs when bound). */
+        val boundAddresses: List<String> = emptyList()
     )
 
     fun build(i: Inputs): JSONObject {
@@ -71,18 +73,29 @@ object DiscoveryManifest {
                 .put("auth_required", true)
         )
         for (addr in i.tailscaleAddresses.distinct()) {
-            connections.put(
-                JSONObject()
-                    .put("id", "tailscale_$addr")
-                    .put("type", "tailscale")
-                    .put("address", addr)
-                    .put("direct_mcp", false)
-                    .put(
-                        "how",
-                        "Server binds ${i.localHost} only. From a tailnet peer: `adb connect $addr:<adb-port>` then " +
-                            "`adb forward tcp:${i.port} tcp:${i.port}` and use http://127.0.0.1:${i.port}/mcp"
-                    )
-            )
+            val direct = addr in i.boundAddresses
+            val o = JSONObject()
+                .put("id", "tailscale_$addr")
+                .put("type", "tailscale")
+                .put("address", addr)
+                .put("direct_mcp", direct)
+                .put("auth_required", true)
+            if (direct) {
+                val base = "http://$addr:${i.port}"
+                o.put("mcp_http", "$base/mcp")
+                    .put("mcp_ws", "ws://$addr:${i.port}/ws")
+                    .put("discover", "$base/discover")
+                    .put("health", "$base/health")
+                    .put("bind", addr)
+                    .put("reachable_from", "any device on the owner's tailnet (survives reboot + Wi-Fi change; no adb needed)")
+            } else {
+                o.put(
+                    "how",
+                    "Server not bound on $addr yet. From a tailnet peer: `adb connect $addr:<adb-port>` then " +
+                        "`adb forward tcp:${i.port} tcp:${i.port}` and use http://127.0.0.1:${i.port}/mcp"
+                )
+            }
+            connections.put(o)
         }
         for ((name, rawUrl) in i.bridgeUrls) {
             val url = sanitizeUrl(rawUrl)

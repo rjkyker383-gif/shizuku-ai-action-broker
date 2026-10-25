@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased / 1.8.2-dev
+- **Roam-proof (reboot + new Wi-Fi).** `BrokerServer` now listens on `127.0.0.1` **and** the device's
+  Tailscale 100.64/10 IP(s) when present (never `0.0.0.0`, never Wi-Fi/LAN; `NetBind`). Bearer auth still
+  required for `/mcp` `/ws` `/action`; `/health` `/discover` `/.well-known` stay open. New `RoamKeeper`:
+  ConnectivityManager callback (incl. VPN) + boot/MY_PACKAGE_REPLACED → debounced rebind when the Tailscale
+  IP appears/changes, mDNS re-register, `adb_wifi_enabled=1` (best effort; Android picks a new TLS port —
+  plain `adb tcpip` needs root, not possible), Tailscale's own `CONNECT_VPN` broadcast if Tailscale is
+  installed but down (no login), Doze allowlist for broker + Tailscale via Shizuku
+  (`dumpsys deviceidle whitelist +pkg`). Watchdog also rebinds every 30 s. One-tap **Roam-proof setup**
+  sets Tailscale as always-on VPN via Dhizuku device-owner (`setAlwaysOnVpnPackage`, lockdown off).
+  Discovery `connections[]` tailscale entries now carry `direct_mcp:true` + `http://<ts-ip>:17999/mcp`
+  when bound; `/health` reports `bind`.
+- **Lag fix.** Root cause: every 5 s tick ran on the main thread — EncryptedSharedPreferences decrypts
+  (discovery knownSecrets, Airtable/token reads), NetworkInterface enumeration, full discovery-manifest
+  build, Dhizuku/Shizuku binder calls, parsing/pretty-printing 50 scans incl. hex dumps into a 24-line
+  scrolling TextView, `setText` on every Settings EditText, and `notifyDataSetChanged()` on 4 lists inside
+  one NestedScrollView (full relayout each tick + nested-scroll fights). Now: state built on a single
+  background executor, applied on main ≤1 Hz and coalesced; `ListAdapter`+DiffUtil; TextViews only set when
+  changed; scan panel re-rendered only when `ScanHistoryStore.version` changes; settings fields filled only
+  on open/save; inner RecyclerViews have nested scrolling off (outer scroll owns flings); hex dumps capped
+  in the UI (full JSON via Copy).
+- **Scans fixed.** Root cause: DataWedge only applies an app's profile while that app is in the foreground
+  (other apps use Profile0 → keystrokes only), and the broker profile was only created if an AI called
+  `set_config`. New `DataWedgeRepair` (auto-applied once per install on Zebra + **Repair DataWedge profile**
+  buttons): ENABLE_DATAWEDGE; broker profile UPDATE with app binding, free decoders + AIM IDs, INTENT
+  broadcast `com.rjkyker.shizukuai.broker.SCAN`/DEFAULT, BDF off (raw bytes/control chars), keystroke off;
+  Profile0 UPDATE adds INTENT output only (RESET_CONFIG=false, keystroke typing untouched) so scans in any
+  app also reach the broker. Receiver registered in `BrokerService.onCreate`; scan count/time/path shown in
+  Systems; live UI update on each scan. No licence anything.
+- **Plain-English "What this means"** (`ScanExplainer`): every enriched scan now carries `english[]`
+  ({field,value,meaning}) — symbology, GS1 AIs (GTIN, lot, expiry/best-before/production dates as real
+  dates, serial, SSCC, weights with decimals, ship-to…), UPC/EAN/ISBN with GS1 prefix issuer + check digit,
+  AAMVA licence fields (names, dates, sex, eye colour…), Wi-Fi QR (password length only), vCard/MECARD,
+  URL/geo/mailto/tel, EMVCo payment QR (currency, static/dynamic), ISO 15434, HIBC, JSON/kv, hidden
+  `<GS>/<RS>/<EOT>` explained. Explains only what is encoded. Bare 8/12/13-digit retail codes are no longer
+  mis-parsed as GS1 element strings. Also returned by `scan_history`.
+- **Talk (live voice agent).** New TALK panel: tap → RECORD_AUDIO (runtime prompt) → SpeechRecognizer with
+  partial transcript → instant on-device answers (`LocalAgent`: status, last-scan meaning, time) or Muse via
+  `https://presocial-endocrinopathic-fumiko.ngrok-free.dev/muse/voice` (only host allowed; broker token as
+  X-Broker-Token over HTTPS) → reply spoken → listens again until STOP/"stop". Muse exposes no TTS API to
+  third-party apps, so replies use Android TextToSpeech, labelled **Device voice** (voice picker); a real
+  Muse `audio_url` from the relay would be played and labelled "Muse voice". Mic only during a session and
+  stopped on pause. Never sends SMS/email/calls/spends.
+- Version 1.8.2-dev (versionCode 12). Tests: +ScanExplainerTest, DataWedgeRepairTest, NetBindTest,
+  LocalAgentTest, discovery tailscale-direct (49 total).
+
 ## Unreleased / 1.8.0-dev
 - **AI discovery layer.** New open, read-only endpoints `GET /discover` and `GET /.well-known/mcp.json`
   serve a capability manifest (`schema: shizuku-broker-discovery/1`): app/device/version, MCP

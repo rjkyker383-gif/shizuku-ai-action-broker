@@ -95,6 +95,10 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
         lastEventJson.set(json)
         lastScanJson.set(json)
         lastStatusString.set("scan: $label | ${ScanParsers.renderVisible(data).take(80)}")
+        scanCount.incrementAndGet()
+        lastScanAt = System.currentTimeMillis()
+        lastScanPath = if (this === dynamicReceiver) "dynamic" else "manifest"
+        for (l in scanListeners) runCatching { l(json) }
         Log.i(TAG, "SCAN: label=$label len=${data.length} segs=${segments.size} source=$source")
     }
 
@@ -124,6 +128,15 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
         val lastStatusString = AtomicReference("DataWedge: no events yet")
 
         private val registered = AtomicBoolean(false)
+
+        /** Diagnostics (no payload contents): count / time / which receiver path delivered. */
+        val scanCount = java.util.concurrent.atomic.AtomicInteger(0)
+        @Volatile var lastScanAt: Long = 0L
+        @Volatile var lastScanPath: String = "none"
+        fun isDynamicRegistered(): Boolean = registered.get()
+
+        /** UI listeners (called on the receiver's thread — post to main yourself). */
+        val scanListeners = java.util.concurrent.CopyOnWriteArrayList<(JSONObject) -> Unit>()
         private var dynamicReceiver: DataWedgeResultReceiver? = null
 
         /** Register a runtime receiver for RESULT_ACTION + scan action (idempotent). */

@@ -89,6 +89,183 @@
             android:paddingBottom="24dp">
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelTalk"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleTalk"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_talk" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/talkButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="64dp"
+                            android:layout_weight="2"
+                            android:textSize="18sp"
+                            android:text="@string/talk_start" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/talkStopButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="64dp"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:enabled="false"
+                            android:text="@string/talk_stop" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <View
+                            android:id="@+id/talkLed"
+                            android:layout_width="12dp"
+                            android:layout_height="12dp"
+                            android:layout_marginEnd="8dp"
+                            android:background="@drawable/cc_led"
+                            android:backgroundTint="@color/led_off" />
+
+                        <TextView
+                            android:id="@+id/talkStatusText"
+                            style="@style/CC.Caption"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/talk_idle" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/talkPartialText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:maxLines="3"
+                        android:text="" />
+
+                    <TextView
+                        android:id="@+id/talkHistoryText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:maxLines="14"
+                        android:textIsSelectable="true"
+                        android:text="" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/talkVoiceButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/talk_voice_loading" />
+
+                    <TextView
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/talk_note" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelScans"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleScans"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_scans" />
+
+                    <TextView
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/scans_hint" />
+
+                    <TextView
+                        android:id="@+id/scanDetailText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:maxLines="90"
+                        android:textIsSelectable="true"
+                        android:text="@string/scans_empty" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/scanList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:nestedScrollingEnabled="false"
+                        android:overScrollMode="never" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/scanCopyButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/scan_copy" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/scanClearButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/scan_clear" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/scanRepairButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/repair_datawedge" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelSystems"
                 style="@style/CC.Panel"
                 android:layout_width="match_parent"
@@ -297,6 +474,18 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/query_datawedge" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/repairDataWedgeButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/repair_datawedge" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/roamHardenButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/roam_harden" />
                     <TextView
                         android:id="@+id/datawedgeStatusText"
                         style="@style/CC.Caption"
@@ -443,68 +632,6 @@
             </com.google.android.material.card.MaterialCardView>
 
             
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/panelScans"
-                style="@style/CC.Panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/titleScans"
-                        style="@style/CC.PanelTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:tag="accent"
-                        android:text="@string/panel_scans" />
-
-                    <TextView
-                        android:id="@+id/scanDetailText"
-                        style="@style/CC.Mono"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:maxLines="24"
-                        android:scrollbars="vertical"
-                        android:textIsSelectable="true"
-                        android:text="@string/scans_empty" />
-
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/scanList"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:nestedScrollingEnabled="false"
-                        android:overScrollMode="never" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/scanCopyButton"
-                            style="@style/CC.Button"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/scan_copy" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/scanClearButton"
-                            style="@style/CC.Button"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/scan_clear" />
-                    </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
 <com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelCustomize"
                 style="@style/CC.Panel"

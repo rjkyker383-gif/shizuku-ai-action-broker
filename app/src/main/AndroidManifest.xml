@@ -21,10 +21,20 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Dhizuku (device-owner sharing): makes the broker show up in Dhizuku's app list -->
     <uses-permission android:name="com.rosan.dhizuku.permission.API" />
+    <!-- Talk panel: mic is used only while a Talk session is active (runtime permission) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.rosan.dhizuku" />
+        <package android:name="com.tailscale.ipn" />
+        <package android:name="com.symbol.datawedge" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application

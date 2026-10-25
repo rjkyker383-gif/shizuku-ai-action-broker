@@ -25,6 +25,7 @@ import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import android.provider.Settings
 import com.rjkyker.shizukuai.broker.discovery.NsdAdvertiser
 import com.rjkyker.shizukuai.broker.server.BrokerServer
+import com.rjkyker.shizukuai.broker.net.RoamKeeper
 import com.rjkyker.shizukuai.broker.ui.MainActivity
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import rikka.shizuku.Shizuku
@@ -62,6 +63,8 @@ class BrokerService : Service() {
         override fun run() {
             try {
                 ensureServer()
+                // Cheap: rebind if the Tailscale IP appeared/changed without a network callback.
+                runCatching { BrokerServer.get()?.rebindIfNeeded() }
                 // Re-init Dhizuku if it was installed but the binder went away after a reboot.
                 if (DhizukuGateway.isInstalled(applicationContext) && !DhizukuGateway.isGranted()) {
                     runCatching { DhizukuGateway.init(applicationContext) }
@@ -92,6 +95,10 @@ class BrokerService : Service() {
         runCatching { NsdAdvertiser.register(applicationContext) }
         // Periodic Airtable telemetry flush (no-ops until an API key is set in the app).
         runCatching { AirtableSyncWorker.schedulePeriodic(applicationContext) }
+        // Roam-proof: rebind on Tailscale IP change, re-register mDNS, wireless-debug + Tailscale nudge.
+        runCatching { RoamKeeper.start(applicationContext) }
+        DataWedgeResultReceiver.ensureRegistered(applicationContext)
+        autoRepairDataWedgeOnce()
         handler.postDelayed(watchdog, WATCHDOG_MS)
     }
 
@@ -129,6 +136,25 @@ class BrokerService : Service() {
             Log.i(TAG, "watchdog re-asserted accessibility service")
         } catch (e: Exception) {
             Log.w(TAG, "reassertAccessibility: ${e.message}")
+        }
+    }
+
+    /**
+     * Scans weren't landing because DataWedge only used the broker profile while the broker was in the
+     * foreground (and the profile was never created unless an AI called set_config). Apply the repair
+     * plan once per install/upgrade on Zebra devices; the Repair button re-applies it any time.
+     */
+    private fun autoRepairDataWedgeOnce() {
+        try {
+            val installed = runCatching { packageManager.getPackageInfo("com.symbol.datawedge", 0); true }.getOrDefault(false)
+            if (!installed) return
+            val prefs = getSharedPreferences("broker_dw_repair", MODE_PRIVATE)
+            val vc = runCatching { packageManager.getPackageInfo(packageName, 0).longVersionCode }.getOrDefault(0L)
+            if (prefs.getLong("applied_version", -1L) == vc) return
+            com.rjkyker.shizukuai.broker.datawedge.DataWedgeRepair.apply(applicationContext)
+            prefs.edit().putLong("applied_version", vc).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "autoRepairDataWedgeOnce: ${e.message}")
         }
     }
 
@@ -193,7 +219,7 @@ class BrokerService : Service() {
             .setContentTitle("Shizuku AI Broker")
             .setContentText(status)
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                "Local MCP on 127.0.0.1:${BrokerServer.PORT}\n" +
+                "MCP :${BrokerServer.PORT} on ${BrokerServer.get()?.boundAddresses?.joinToString(" + ") ?: "127.0.0.1"}\n" +
                     "POST /mcp · GET /ws · POST /action · GET /health · GET /discover\n" +
                     "Upstream: ${if (upHost.isEmpty()) "(not configured — set in app)" else upHost}\n" +
                     "Auth required (Bearer token). Boot-persistent."
@@ -215,6 +241,7 @@ class BrokerService : Service() {
             bindersRegistered = false
         }
         runCatching { NsdAdvertiser.unregister(applicationContext) }
+        runCatching { RoamKeeper.stop(applicationContext) }
         BrokerServer.get()?.stop()
         super.onDestroy()
     }

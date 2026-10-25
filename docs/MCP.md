@@ -278,3 +278,24 @@ LEDs). Every value is bound to real state; nothing is mocked.
 - Binder watchdog inside `BrokerService` re-inits Dhizuku when Shizuku returns
   and restarts `BrokerServer` if its thread died.
 - Request “Ignore battery optimizations” from MainActivity so Doze does not kill the server.
+
+
+## Roam-proof networking (1.8.2)
+- Listens on `127.0.0.1:17999` + every Tailscale IPv4 (100.64.0.0/10) on the device. Never `0.0.0.0`/LAN.
+- From any tailnet peer: `curl http://100.95.242.123:17999/health` (open) and
+  `curl -X POST http://100.95.242.123:17999/mcp -H "Authorization: Bearer $TOKEN" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`.
+- Rebinds automatically on network change / Tailscale up / boot (`RoamKeeper`). `/health.bind` lists live addresses.
+- Phone side: Tailscale → Always-on VPN (or the **Roam-proof setup** button via Dhizuku); battery optimization off
+  for Tailscale + broker.
+
+## Scans (1.8.2)
+- DataWedge output: broadcast `com.rjkyker.shizukuai.broker.SCAN`, category DEFAULT (broker profile + Profile0).
+  **Repair DataWedge profile** re-applies it. Test: `adb shell am broadcast -a com.rjkyker.shizukuai.broker.SCAN
+  -c android.intent.category.DEFAULT --es com.symbol.datawedge.data_string "]C101095011010209171727063010ABC123"
+  --es com.symbol.datawedge.label_type LABEL-TYPE-GS1-128`.
+- Each scan record (and `scan_history`) includes `english[]`: `{field, value, meaning}` plain-English explanations.
+
+## Talk voice relay (1.8.2)
+- Phone → `POST https://presocial-endocrinopathic-fumiko.ngrok-free.dev/muse/voice` `{text, session}` (X-Broker-Token),
+  polls `GET …/muse/voice/reply?id=`. Muse answers via the Muse bridge MCP tools `voice_inbox` / `voice_reply`.
+- Replies are spoken with Android TTS ("Device voice"); Muse offers no TTS API.

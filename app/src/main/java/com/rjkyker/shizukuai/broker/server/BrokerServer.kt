@@ -7,6 +7,8 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
 import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.mcp.McpToolExecutor
+import com.rjkyker.shizukuai.broker.net.NetBind
+import com.rjkyker.shizukuai.broker.net.NetInfo
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -26,7 +28,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Lightweight localhost HTTP(+MCP/WebSocket) server on 127.0.0.1:17999 (ServerSocket, no NanoHTTPD).
+ * Lightweight HTTP(+MCP/WebSocket) server on 127.0.0.1:17999 AND on the device's Tailscale 100.x IP(s)
+ * when present (never 0.0.0.0 / never Wi-Fi LAN). Rebinds when the network changes ([rebindIfNeeded]).
  *
  * Routes:
  * - GET  /health              — unauthenticated keepalive (no secrets); flags mcp + auth_required
@@ -54,39 +57,78 @@ class BrokerServer(private val context: Context) {
     val isRunning: Boolean get() = running.get()
     val port: Int get() = PORT
 
+    /** Addresses currently listening (127.0.0.1 + any Tailscale 100.x IPs). */
+    @Volatile var boundAddresses: List<String> = emptyList()
+        private set
+    @Volatile var lastBindError: String = ""
+        private set
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<ServerSocket>()
+
     fun start() {
         if (!running.compareAndSet(false, true)) return
         // Ensure a token exists before any client can hit protected routes.
         SecurePrefs.ensureMcpToken(context)
-        thread = Thread({
+        bindAll(NetBind.bindAddresses(NetInfo.tailscaleIps()))
+        if (listeners.isEmpty()) running.set(false)
+    }
+
+    /**
+     * Re-detect Tailscale and rebind if the address set changed (Wi-Fi change, VPN up/down, reboot).
+     * Loopback listener stays up across the swap unless it also needs replacing. Returns true if changed.
+     */
+    @Synchronized
+    fun rebindIfNeeded(): Boolean {
+        if (!running.get()) return false
+        val desired = NetBind.bindAddresses(NetInfo.tailscaleIps())
+        if (!NetBind.needsRebind(boundAddresses, desired)) return false
+        Log.i(TAG, "rebind: $boundAddresses -> $desired")
+        val keep = listeners.filter { (it.inetAddress?.hostAddress ?: "") in desired }
+        for (ss in listeners) if (ss !in keep) runCatching { ss.close() }
+        listeners.retainAll(keep.toSet())
+        val have = keep.mapNotNull { it.inetAddress?.hostAddress }.toSet()
+        bindAll(desired.filter { it !in have })
+        boundAddresses = listeners.mapNotNull { it.inetAddress?.hostAddress }
+        return true
+    }
+
+    @Synchronized
+    private fun bindAll(addrs: List<String>) {
+        val errors = StringBuilder()
+        for (addr in addrs) {
+            if (!NetBind.isAllowedBind(addr)) continue // never wildcard / LAN
             try {
-                val ss = ServerSocket(PORT, 50, InetAddress.getByName(HOST))
-                serverSocket = ss
-                Log.i(TAG, "BrokerServer listening on $HOST:$PORT (mcp=/mcp ws=/ws)")
-                while (running.get()) {
-                    try {
-                        val socket = ss.accept()
-                        pool.execute { handleClient(socket) }
-                    } catch (e: Exception) {
-                        if (running.get()) Log.w(TAG, "accept error: ${e.message}")
-                    }
-                }
+                val ss = ServerSocket()
+                ss.reuseAddress = true
+                ss.bind(java.net.InetSocketAddress(InetAddress.getByName(addr), PORT), 50)
+                listeners += ss
+                Thread({ acceptLoop(ss) }, "BrokerServer-$addr").also { it.isDaemon = true; it.start() }
+                Log.i(TAG, "BrokerServer listening on $addr:$PORT (mcp=/mcp ws=/ws)")
             } catch (e: Exception) {
-                Log.e(TAG, "BrokerServer failed to bind $HOST:$PORT", e)
-                running.set(false)
+                errors.append("$addr: ${e.message}; ")
+                Log.e(TAG, "BrokerServer failed to bind $addr:$PORT", e)
             }
-        }, "BrokerServer").also {
-            it.isDaemon = true
-            it.start()
+        }
+        lastBindError = errors.toString()
+        boundAddresses = listeners.mapNotNull { it.inetAddress?.hostAddress }
+        serverSocket = listeners.firstOrNull()
+    }
+
+    private fun acceptLoop(ss: ServerSocket) {
+        while (running.get() && !ss.isClosed) {
+            try {
+                val socket = ss.accept()
+                pool.execute { handleClient(socket) }
+            } catch (e: Exception) {
+                if (running.get() && !ss.isClosed) Log.w(TAG, "accept error: ${e.message}")
+            }
         }
     }
 
     fun stop() {
         running.set(false)
-        try {
-            serverSocket?.close()
-        } catch (_: Exception) {
-        }
+        for (ss in listeners) runCatching { ss.close() }
+        listeners.clear()
+        boundAddresses = emptyList()
         serverSocket = null
         thread = null
     }
@@ -176,6 +218,7 @@ class BrokerServer(private val context: Context) {
                         .put("version", versionName())
                         .put("mcp", true)
                         .put("auth_required", true)
+                        .put("bind", org.json.JSONArray(boundAddresses))
                         .put("endpoints", JSONObject()
                             .put("mcp", "/mcp")
                             .put("ws", "/ws")

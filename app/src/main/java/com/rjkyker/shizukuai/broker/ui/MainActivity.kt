@@ -35,6 +35,13 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
 import com.rjkyker.shizukuai.broker.datawedge.ScanParsers
+import com.rjkyker.shizukuai.broker.datawedge.ScanExplainer
+import com.rjkyker.shizukuai.broker.datawedge.DataWedgeRepair
+import com.rjkyker.shizukuai.broker.net.NetInfo
+import com.rjkyker.shizukuai.broker.voice.LocalAgent
+import com.rjkyker.shizukuai.broker.voice.MuseVoiceClient
+import com.rjkyker.shizukuai.broker.voice.TalkController
+import com.rjkyker.shizukuai.broker.net.RoamKeeper
 import org.json.JSONObject
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
@@ -67,7 +74,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bridgeAdapter: StatusRowAdapter
     private lateinit var connectionAdapter: StatusRowAdapter
     private lateinit var scanAdapter: StatusRowAdapter
-    private var selectedScan: JSONObject? = null
 
     private data class Probe(val ok: Boolean, val detail: String)
     private val probes = ConcurrentHashMap<String, Probe>()
@@ -92,14 +98,15 @@ class MainActivity : AppCompatActivity() {
     /** Hideable panels: pref key → card. Customize itself is always shown. */
     private val panels: List<Pair<String, MaterialCardView>> by lazy {
         listOf(
+            "talk" to binding.panelTalk,
+            "scans" to binding.panelScans,
             "systems" to binding.panelSystems,
             "mesh" to binding.panelMesh,
             "connections" to binding.panelConnections,
             "security" to binding.panelSecurity,
             "controls" to binding.panelControls,
             "settings" to binding.panelSettings,
-            "scopes" to binding.panelScopes,
-            "scans" to binding.panelScans
+            "scopes" to binding.panelScopes
         )
     }
 
@@ -125,7 +132,11 @@ class MainActivity : AppCompatActivity() {
         statusAdapter = StatusRowAdapter(copy)
         bridgeAdapter = StatusRowAdapter(copy)
         connectionAdapter = StatusRowAdapter(copy)
-        scanAdapter = StatusRowAdapter(copy)
+        scanAdapter = StatusRowAdapter(copy) { key ->
+            selectedScanTs = key.toLongOrNull() ?: -1L
+            lastScanVersion = -1 // re-render rows to move the "◀ shown" marker
+            refreshStatus()
+        }
         setupList(binding.statusList, statusAdapter)
         setupList(binding.bridgeList, bridgeAdapter)
         setupList(binding.connectionList, connectionAdapter)
@@ -148,6 +159,10 @@ class MainActivity : AppCompatActivity() {
         binding.batteryButton.setOnClickListener { requestBatteryExemption() }
         binding.saveAirtableButton.setOnClickListener { saveAirtableKey() }
         binding.saveBridgesButton.setOnClickListener { saveBridgeUrls() }
+        binding.repairDataWedgeButton.setOnClickListener { repairDataWedge() }
+        binding.scanRepairButton.setOnClickListener { repairDataWedge() }
+        binding.roamHardenButton.setOnClickListener { roamHarden() }
+        setupTalk()
 
         setupCustomize()
         applyPanelVisibility()
@@ -169,6 +184,10 @@ class MainActivity : AppCompatActivity() {
         rv.layoutManager = LinearLayoutManager(this)
         rv.adapter = adapter
         rv.itemAnimator = null
+        // Lists live inside the single outer NestedScrollView: let it own scrolling/flings
+        // (removes nested-scroll fighting that made swipes stutter or get swallowed).
+        rv.isNestedScrollingEnabled = false
+        rv.overScrollMode = View.OVER_SCROLL_NEVER
     }
 
     // ---------------- Customize ----------------
@@ -181,6 +200,7 @@ class MainActivity : AppCompatActivity() {
             "connections" to R.string.panel_connections, "security" to R.string.panel_security,
             "controls" to R.string.panel_controls, "settings" to R.string.panel_settings,
             "scans" to R.string.panel_scans,
+            "talk" to R.string.panel_talk,
             "scopes" to R.string.scopes_label
         )
         for ((key, _) in panels) {
@@ -248,7 +268,88 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- Status binding (real state only) ----------------
 
+    // Dashboard state is built OFF the main thread (binder calls, EncryptedSharedPreferences decrypts,
+    // NetworkInterface enumeration, discovery manifest, scan JSON) and applied on main with DiffUtil.
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "DashboardIO").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
+    }
+    @Volatile private var refreshInFlight = false
+    @Volatile private var refreshQueued = false
+    private var lastRefreshAt = 0L
+    private var lastScanVersion = -1
+    @Volatile private var selectedScanTs: Long = -1L
+    private val refreshRunnable = Runnable { refreshStatus() }
+
+    private class UiState(
+        val statusRows: List<StatusRow>,
+        val bridgeRows: List<StatusRow>,
+        val connRows: List<StatusRow>,
+        val headerColorRes: Int,
+        val subtitle: String,
+        val dzGranted: Boolean,
+        val shizukuBinder: Boolean,
+        val shizukuPerm: Boolean,
+        val scopesText: String,
+        val dwStatus: String,
+        val meshProbeText: String,
+        val scanVersion: Int,
+        val scanRows: List<StatusRow>?,
+        val scanDetail: String?,
+    )
+
+    /** ≤1 Hz, coalesced, never on the main thread. */
     private fun refreshStatus() {
+        val now = System.currentTimeMillis()
+        if (refreshInFlight) { refreshQueued = true; return }
+        val wait = MIN_REFRESH_MS - (now - lastRefreshAt)
+        if (wait > 0) {
+            handler.removeCallbacks(refreshRunnable)
+            handler.postDelayed(refreshRunnable, wait)
+            return
+        }
+        lastRefreshAt = now
+        refreshInFlight = true
+        val scanVer = ScanHistoryStore.version.get()
+        val needScans = scanVer != lastScanVersion
+        val sel = selectedScanTs
+        io.execute {
+            val st = runCatching { buildUiState(needScans, scanVer, sel) }.getOrNull()
+            runOnUiThread {
+                refreshInFlight = false
+                if (st != null && !isFinishing && !isDestroyed) applyUiState(st)
+                if (refreshQueued) { refreshQueued = false; refreshStatus() }
+            }
+        }
+    }
+
+    private fun applyUiState(st: UiState) {
+        statusAdapter.submit(st.statusRows)
+        bridgeAdapter.submit(st.bridgeRows)
+        connectionAdapter.submit(st.connRows)
+        setIfChanged(binding.meshProbeText, st.meshProbeText)
+        binding.headerLed.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, st.headerColorRes))
+        setIfChanged(binding.headerSubtitle, st.subtitle)
+        binding.dhizukuButton.isEnabled = !st.dzGranted
+        binding.shizukuPermissionButton.isEnabled = st.shizukuBinder && !st.shizukuPerm
+        setIfChanged(binding.scopesText, st.scopesText)
+        if (binding.datawedgeStatusText.text.isNullOrBlank() ||
+            binding.datawedgeStatusText.text == getString(R.string.datawedge_none) ||
+            binding.datawedgeStatusText.text.startsWith("scan:") || binding.datawedgeStatusText.text.startsWith("DataWedge")
+        ) setIfChanged(binding.datawedgeStatusText, st.dwStatus)
+        if (st.scanRows != null) {
+            scanAdapter.submit(st.scanRows)
+            lastScanVersion = st.scanVersion
+        }
+        st.scanDetail?.let { setIfChanged(binding.scanDetailText, it) }
+        if (!tokenVisible) setIfChanged(binding.mcpTokenText, getString(R.string.mcp_token_hidden))
+    }
+
+    private fun setIfChanged(tv: TextView, text: CharSequence) {
+        if (tv.text?.toString() != text.toString()) tv.text = text
+    }
+
+    /** Runs on [io]. Pure data gathering — must not touch views. */
+    private fun buildUiState(needScans: Boolean, scanVer: Int, selTs: Long): UiState {
         val ctx = applicationContext
         val snap = runCatching { BrokerStatusSnapshot.build(ctx) }.getOrNull()
         val server = BrokerServer.get()
@@ -260,15 +361,30 @@ class MainActivity : AppCompatActivity() {
         val airtableSet = SecurePrefs.getAirtableApiKey(ctx).isNotBlank()
         val wifi = WifiPresenceEngine.stateJson()
         val up = probes["upstream"]
-        val dzInstalled = DhizukuGateway.isInstalled(this)
+        val dzInstalled = DhizukuGateway.isInstalled(ctx)
         val dzGranted = DhizukuGateway.isGranted()
+        val bound = server?.boundAddresses.orEmpty()
+        val tsIps = NetInfo.tailscaleIps()
 
         val rows = mutableListOf<StatusRow>()
         rows += StatusRow(
             "MCP server",
-            if (running) "LISTENING ${BrokerServer.HOST}:${BrokerServer.PORT} · bearer required"
-            else if (server == null) "NOT STARTED" else "STOPPED",
+            if (running) "LISTENING ${bound.joinToString(" + ").ifEmpty { BrokerServer.HOST }} :${BrokerServer.PORT} · bearer required"
+            else if (server == null) "NOT STARTED" else "STOPPED ${server.lastBindError}".trim(),
             if (running) Led.OK else Led.BAD
+        )
+        val tsBound = tsIps.filter { it in bound }
+        rows += StatusRow(
+            "Roam-proof (Tailscale direct)",
+            when {
+                tsBound.isNotEmpty() -> "DIRECT http://${tsBound.first()}:${BrokerServer.PORT} · survives reboot + Wi-Fi change"
+                tsIps.isNotEmpty() -> "Tailscale ${tsIps.first()} up · rebinding…"
+                RoamKeeper.isInstalled(ctx, RoamKeeper.TAILSCALE_PKG) -> "Tailscale OFF — open Tailscale / tap Roam-proof setup"
+                else -> "Tailscale not installed — only loopback / adb"
+            } + " · last net event: ${RoamKeeper.lastEvent}",
+            when { tsBound.isNotEmpty() -> Led.OK; tsIps.isNotEmpty() -> Led.WARN; else -> Led.BAD },
+            copyText = tsBound.firstOrNull()?.let { "http://$it:${BrokerServer.PORT}/mcp" },
+            key = "roam"
         )
         rows += StatusRow("Shizuku binder", if (shizuku.binderAlive) "CONNECTED" else "NOT CONNECTED",
             if (shizuku.binderAlive) Led.OK else Led.BAD)
@@ -287,7 +403,16 @@ class MainActivity : AppCompatActivity() {
             },
             when { dzGranted -> Led.OK; dzInstalled -> Led.WARN; else -> Led.OFF }
         )
-        rows += StatusRow("Accessibility service", if (a11y) "ON" else "OFF", if (a11y) Led.OK else Led.WARN)
+        rows += StatusRow("Accessibility service", if (a11y) "ON" else "OFF (watchdog re-enables within 30 s)", if (a11y) Led.OK else Led.WARN)
+        val sc = DataWedgeResultReceiver.scanCount.get()
+        rows += StatusRow(
+            "Scan receiver",
+            (if (DataWedgeResultReceiver.isDynamicRegistered()) "LISTENING" else "NOT REGISTERED") +
+                " · $sc scan(s) this session" +
+                (if (DataWedgeResultReceiver.lastScanAt > 0) " · last ${DateFormat.getTimeInstance().format(Date(DataWedgeResultReceiver.lastScanAt))} via ${DataWedgeResultReceiver.lastScanPath}" else " · none yet — tap Repair DataWedge"),
+            when { !DataWedgeResultReceiver.isDynamicRegistered() -> Led.BAD; sc > 0 -> Led.OK; else -> Led.WARN },
+            key = "scanrx"
+        )
         rows += StatusRow(
             "Upstream reachable",
             when {
@@ -320,49 +445,55 @@ class MainActivity : AppCompatActivity() {
         rows += StatusRow(
             "App",
             "v${versionName()} · pid ${snap?.optInt("pid") ?: android.os.Process.myPid()} · up ${fmtUptime(BrokerStatusSnapshot.uptimeMs())}",
-            Led.INFO
+            Led.INFO, key = "app"
         )
-        statusAdapter.submit(rows)
-        refreshScans()
 
-        binding.headerLed.backgroundTintList = ColorStateList.valueOf(
-            ContextCompat.getColor(this, when {
-                running && shizuku.permissionGranted -> R.color.led_ok
-                running -> R.color.led_warn
-                else -> R.color.led_bad
-            })
-        )
-        binding.headerSubtitle.text = "v${versionName()} · ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · MCP :${BrokerServer.PORT}"
-
-        bindBridges()
-        bindConnections()
-
-        // Controls / scopes
-        binding.dhizukuButton.isEnabled = !dzGranted
-        binding.shizukuPermissionButton.isEnabled = shizuku.binderAlive && !shizuku.permissionGranted
-        val scopes = admin.getActiveScopes()
+        val scopes = runCatching { admin.getActiveScopes() }.getOrDefault(emptyList())
         val dhizukuScopes = if (dzGranted) {
             runCatching { com.rosan.dhizuku.api.Dhizuku.getDelegatedScopes()?.toList() }.getOrNull().orEmpty()
         } else emptyList()
         val allScopes = (scopes + dhizukuScopes).distinct()
-        binding.scopesText.text = when {
+        val scopesText = when {
             allScopes.isNotEmpty() -> allScopes.joinToString("\n")
             dzGranted -> getString(R.string.no_scopes_dhizuku_granted)
             dzInstalled -> getString(R.string.no_scopes_dhizuku_pending, DhizukuGateway.lastPermissionResult)
             else -> getString(R.string.no_scopes)
         }
-        if (binding.datawedgeStatusText.text.isNullOrBlank() ||
-            binding.datawedgeStatusText.text == getString(R.string.datawedge_none)
-        ) {
-            binding.datawedgeStatusText.text = DataWedgeResultReceiver.lastStatusString.get()
-        }
-        if (!tokenVisible) binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
-        fillSettingsFields(force = false)
-    }
 
-    private fun bindBridges() {
-        val mesh = BridgeMeshRelay(applicationContext)
-        val rows = BridgeMeshRelay.BRIDGES.map { name ->
+        var scanRows: List<StatusRow>? = null
+        var scanDetail: String? = null
+        if (needScans || selTs >= 0) {
+            ScanHistoryStore.ensureLoaded(ctx)
+            val arr = ScanHistoryStore.latest(30)
+            if (needScans) {
+                val sr = ArrayList<StatusRow>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val s = arr.optJSONObject(i) ?: continue
+                    val ts = s.optLong("ts")
+                    val whenStr = if (ts > 0) DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(ts)) else "?"
+                    val firstMeaning = s.optJSONArray("english")?.let { e ->
+                        (0 until e.length()).mapNotNull { e.optJSONObject(it) }.firstOrNull { it.optString("field") != "Barcode type" }
+                            ?.optString("meaning")
+                    }?.take(70)
+                    sr += StatusRow(
+                        label = "$whenStr · ${s.optString("label_type", "unknown")}${if (ts == selTs) "  ◀ shown" else ""}",
+                        value = s.optString("visible_text", s.optString("data_string")).take(60) +
+                            (firstMeaning?.let { "\n$it" } ?: ""),
+                        state = if (ts == selTs) Led.OK else Led.INFO,
+                        copyText = s.toString(),
+                        key = ts.toString()
+                    )
+                }
+                scanRows = sr
+            }
+            var detail: JSONObject? = null
+            if (selTs >= 0) for (i in 0 until arr.length()) { val s = arr.optJSONObject(i); if (s?.optLong("ts") == selTs) { detail = s; break } }
+            if (detail == null) detail = arr.optJSONObject(0)
+            scanDetail = if (detail != null) formatScanDetail(detail) else getString(R.string.scans_empty)
+        }
+
+        val mesh = BridgeMeshRelay(ctx)
+        val bridgeRows = BridgeMeshRelay.BRIDGES.map { name ->
             val url = mesh.urlFor(name)
             val p = probes[name]
             StatusRow(
@@ -377,17 +508,37 @@ class MainActivity : AppCompatActivity() {
                 copyText = url.ifBlank { null }
             )
         }
-        bridgeAdapter.submit(rows)
-        binding.meshProbeText.text = when {
+        val meshText = when {
             probing -> getString(R.string.mesh_probing)
             lastProbeAt == 0L -> getString(R.string.mesh_not_probed)
             else -> getString(R.string.mesh_probed_at, DateFormat.getTimeInstance().format(Date(lastProbeAt)))
         }
+
+        return UiState(
+            statusRows = rows,
+            bridgeRows = bridgeRows,
+            connRows = buildConnectionRows(),
+            headerColorRes = when {
+                running && shizuku.permissionGranted -> R.color.led_ok
+                running -> R.color.led_warn
+                else -> R.color.led_bad
+            },
+            subtitle = "v${versionName()} · ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · MCP :${BrokerServer.PORT}",
+            dzGranted = dzGranted,
+            shizukuBinder = shizuku.binderAlive,
+            shizukuPerm = shizuku.permissionGranted,
+            scopesText = scopesText,
+            dwStatus = DataWedgeResultReceiver.lastStatusString.get(),
+            meshProbeText = meshText,
+            scanVersion = scanVer,
+            scanRows = scanRows,
+            scanDetail = scanDetail,
+        )
     }
 
-    /** Rows come from the very same manifest served at GET /discover, so UI and AIs agree. */
-    private fun bindConnections() {
-        val manifest = runCatching { DiscoveryProvider.manifest(applicationContext) }.getOrNull() ?: return
+    /** Rows come from the very same manifest served at GET /discover, so UI and AIs agree. Runs on [io]. */
+    private fun buildConnectionRows(): List<StatusRow> {
+        val manifest = runCatching { DiscoveryProvider.manifest(applicationContext) }.getOrNull() ?: return emptyList()
         val rows = mutableListOf<StatusRow>()
         val base = "http://${BrokerServer.HOST}:${BrokerServer.PORT}"
         rows += StatusRow("Discovery manifest (open)", "$base/discover", Led.INFO, "$base/discover")
@@ -400,9 +551,12 @@ class MainActivity : AppCompatActivity() {
                     rows += StatusRow("Loopback MCP (HTTP)", c.optString("mcp_http"), Led.OK, c.optString("mcp_http"))
                     rows += StatusRow("Loopback MCP (WebSocket)", c.optString("mcp_ws"), Led.OK, c.optString("mcp_ws"))
                 }
-                "tailscale" -> rows += StatusRow(
-                    "Tailscale node", "${c.optString("address")} · via adb forward (server binds loopback)",
-                    Led.INFO, c.optString("address")
+                "tailscale" -> rows += if (c.optBoolean("direct_mcp")) StatusRow(
+                    "Tailscale MCP (direct, roam-proof)", c.optString("mcp_http"), Led.OK, c.optString("mcp_http"),
+                    key = "ts_${c.optString("address")}"
+                ) else StatusRow(
+                    "Tailscale node", "${c.optString("address")} · not bound yet (via adb forward)",
+                    Led.WARN, c.optString("address"), key = "ts_${c.optString("address")}"
                 )
                 "mesh_bridge" -> {
                     val p = probes[c.optString("bridge")]
@@ -422,13 +576,13 @@ class MainActivity : AppCompatActivity() {
                 if (mdns.optBoolean("registered")) Led.OK else Led.WARN
             )
         }
-        connectionAdapter.submit(rows)
+        return rows
     }
 
     private fun probeBridges() {
         if (probing) return
         probing = true
-        bindBridges()
+        refreshStatus()
         val ctx = applicationContext
         Thread({
             val mesh = BridgeMeshRelay(ctx)
@@ -641,67 +795,144 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        DataWedgeResultReceiver.scanListeners.addIfAbsent(scanListener)
         handler.removeCallbacks(ticker)
         handler.post(ticker)
     }
 
     override fun onPause() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(refreshRunnable)
+        DataWedgeResultReceiver.scanListeners.remove(scanListener)
+        // Privacy: the mic never stays on in the background.
+        talk?.stop()
         // "Show once": never leave a revealed token on screen when the app is backgrounded.
         hideToken()
         super.onPause()
     }
 
 
-    private fun refreshScans() {
-        ScanHistoryStore.ensureLoaded(applicationContext)
-        val arr = ScanHistoryStore.latest(50)
-        val rows = mutableListOf<StatusRow>()
-        for (i in 0 until arr.length()) {
-            val s = arr.optJSONObject(i) ?: continue
-            val ts = s.optLong("ts")
-            val whenStr = if (ts > 0) DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(ts)) else "?"
-            val label = s.optString("label_type", "unknown")
-            val visible = s.optString("visible_text", s.optString("data_string")).take(60)
-            val src = s.optString("source", "?")
-            rows += StatusRow(
-                label = "$whenStr · $label · $src",
-                value = visible,
-                state = Led.INFO,
-                copyText = s.toString(2)
-            )
+    // ---------------- Talk (live voice agent) ----------------
+
+    private var talk: TalkController? = null
+    private val talkHistory = ArrayDeque<String>()
+
+    private val micPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startTalk() else Toast.makeText(this, R.string.talk_mic_denied, Toast.LENGTH_LONG).show()
+    }
+
+    private fun setupTalk() {
+        val client = MuseVoiceClient { SecurePrefs.getMcpToken(applicationContext) }
+        talk = TalkController(this, client, ::talkFacts, object : TalkController.Listener {
+            override fun onState(state: TalkController.State, detail: String) {
+                binding.talkStatusText.text = detail
+                binding.talkLed.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, when (state) {
+                    TalkController.State.LISTENING -> R.color.led_ok
+                    TalkController.State.THINKING -> R.color.led_info
+                    TalkController.State.SPEAKING -> R.color.led_warn
+                    TalkController.State.ERROR -> R.color.led_bad
+                    TalkController.State.IDLE -> R.color.led_off
+                }))
+                val on = talk?.active == true
+                binding.talkStopButton.isEnabled = on
+                binding.talkButton.text = getString(if (on) R.string.talk_stop else R.string.talk_start)
+                if (state == TalkController.State.IDLE) binding.talkPartialText.text = ""
+            }
+            override fun onPartial(text: String) { binding.talkPartialText.text = "… $text" }
+            override fun onTurn(who: String, text: String) {
+                binding.talkPartialText.text = ""
+                talkHistory.addLast("$who: $text")
+                while (talkHistory.size > 8) talkHistory.removeFirst()
+                binding.talkHistoryText.text = talkHistory.joinToString("\n")
+            }
+            override fun onVoiceLabel(label: String) { binding.talkVoiceButton.text = label }
+        }).also { it.preferredVoiceName = UiPrefs.voiceName(this) }
+        binding.talkButton.setOnClickListener {
+            if (talk?.active == true) talk?.stop() else ensureMicThenTalk()
         }
-        scanAdapter.submit(rows)
-        // Keep detail pane on selected or newest
-        val detail = selectedScan ?: arr.optJSONObject(0)
-        binding.scanDetailText.text = if (detail != null) formatScanDetail(detail) else getString(R.string.scans_empty)
-        // Tap a row → expand: StatusRowAdapter copy button already copies; also set selection via long-press value
-        // Simpler: if user hits Copy on a row it copies JSON; detail shows newest unless selectedScan set via copyText match
+        binding.talkStopButton.setOnClickListener { talk?.stop() }
+        binding.talkVoiceButton.setOnClickListener { pickVoice() }
+    }
+
+    private fun ensureMicThenTalk() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) startTalk()
+        else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun startTalk() { talk?.start() }
+
+    private fun pickVoice() {
+        val t = talk ?: return
+        val voices = t.englishVoices()
+        if (voices.isEmpty()) { Toast.makeText(this, "No offline English device voices installed", Toast.LENGTH_SHORT).show(); return }
+        val names = voices.map { "${it.name} (${it.locale.displayName})" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Device voice (Android TTS)")
+            .setItems(names) { _, idx ->
+                UiPrefs.setVoiceName(this, voices[idx].name)
+                t.preferredVoiceName = voices[idx].name
+                t.applyVoice()
+                binding.talkVoiceButton.text = t.voiceLabel()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Called on the talk worker / main thread; cheap reads only. */
+    private fun talkFacts(): LocalAgent.Facts {
+        val last = ScanHistoryStore.latest(1).optJSONObject(0)
+        val eng = last?.let { s ->
+            val e = s.optJSONArray("english") ?: ScanExplainer.explain(s)
+            (0 until e.length()).mapNotNull { e.optJSONObject(it)?.optString("meaning") }
+        }.orEmpty()
+        val sh = ShizukuGateway.status()
+        return LocalAgent.Facts(
+            serverRunning = BrokerServer.get()?.isRunning == true,
+            boundAddresses = BrokerServer.get()?.boundAddresses.orEmpty(),
+            accessibilityOn = AgentAccessibilityService.isEnabled(),
+            shizukuOk = sh.binderAlive && sh.permissionGranted,
+            lastScanEnglish = eng,
+            nowText = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()),
+        )
     }
 
     private fun formatScanDetail(s: JSONObject): String {
         val sb = StringBuilder()
+        val english = s.optJSONArray("english") ?: ScanExplainer.explain(s)
+        sb.append("▌ WHAT THIS MEANS\n")
+        for (i in 0 until english.length()) {
+            val e = english.optJSONObject(i) ?: continue
+            sb.append("• ").append(e.optString("field"))
+            val v = e.optString("value")
+            if (v.isNotEmpty()) sb.append(" = ").append(v.take(80))
+            sb.append("\n   ").append(e.optString("meaning")).append('\n')
+        }
+        sb.append("\n▌ RAW / HIDDEN DATA\n")
         sb.append("label: ").append(s.optString("label_type", "unknown")).append('\n')
         sb.append("aim: ").append(s.optString("aim_id", "unknown")).append('\n')
         sb.append("source: ").append(s.optString("source", "unknown")).append('\n')
         sb.append("mode: ").append(s.optString("decoded_mode", "unknown")).append('\n')
         sb.append("len: ").append(s.optInt("length")).append(" chars / ").append(s.optInt("byte_length")).append(" bytes\n")
         sb.append("charset: ").append(s.optString("charset")).append('\n')
-        sb.append("visible: ").append(s.optString("visible_text")).append('\n')
-        sb.append("base64: ").append(s.optString("base64").take(120)).append("…\n")
+        sb.append("visible: ").append(s.optString("visible_text").take(600)).append('\n')
         val segs = s.optJSONArray("decode_data")
         if (segs != null) {
-            for (i in 0 until segs.length()) {
+            for (i in 0 until minOf(segs.length(), 4)) {
                 val seg = segs.optJSONObject(i) ?: continue
                 sb.append("--- decode_data[").append(i).append("] ").append(seg.optInt("byte_length")).append(" bytes ---\n")
-                sb.append(seg.optString("hex_dump")).append('\n')
+                // Cap the hex dump so a big PDF417 doesn't stall text layout; full dump via Copy JSON.
+                val hex = seg.optString("hex_dump")
+                sb.append(if (hex.length > 1800) hex.take(1800) + "\n… (truncated — Copy JSON for full dump)" else hex).append('\n')
             }
         }
         val parsers = s.optJSONArray("parsers")
         if (parsers != null) {
             sb.append("--- parsers ---\n")
             for (i in 0 until parsers.length()) {
-                sb.append(parsers.optJSONObject(i)?.toString(2) ?: "").append('\n')
+                sb.append((parsers.optJSONObject(i)?.toString(1) ?: "").take(1500)).append('\n')
             }
         }
         s.optString("structure_note").takeIf { it.isNotEmpty() }?.let {
@@ -710,8 +941,16 @@ class MainActivity : AppCompatActivity() {
         return sb.toString()
     }
 
+    private fun selectedScanJson(): JSONObject? {
+        val arr = ScanHistoryStore.latest(ScanHistoryStore.MAX)
+        if (selectedScanTs >= 0) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i); if (o?.optLong("ts") == selectedScanTs) return o
+        }
+        return arr.optJSONObject(0)
+    }
+
     private fun copySelectedScan() {
-        val detail = selectedScan ?: ScanHistoryStore.latest(1).optJSONObject(0)
+        val detail = selectedScanJson()
         if (detail == null) {
             Toast.makeText(this, "No scan to copy", Toast.LENGTH_SHORT).show()
             return
@@ -723,14 +962,59 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearScans() {
         ScanHistoryStore.clear(applicationContext)
-        selectedScan = null
-        refreshScans()
+        selectedScanTs = -1L
+        lastScanVersion = -1; refreshStatus()
         Toast.makeText(this, "Scan history cleared", Toast.LENGTH_SHORT).show()
     }
 
+    private fun repairDataWedge() {
+        binding.datawedgeStatusText.text = "DataWedge: repairing profile (broker + Profile0 intent output)…"
+        io.execute {
+            val r = DataWedgeRepair.apply(applicationContext)
+            runOnUiThread {
+                binding.datawedgeStatusText.text = "DataWedge repair sent ${r.optJSONArray("steps")?.length() ?: 0} commands → " +
+                    "${r.optString("scan_action")}.\nNow scan any barcode — it should appear in SCAN OUTPUT within a second."
+                Toast.makeText(this, "DataWedge profile repaired — scan something to test", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun roamHarden() {
+        Toast.makeText(this, "Roam-proof setup running…", Toast.LENGTH_SHORT).show()
+        io.execute {
+            val r = RoamKeeper.hardenNow(applicationContext)
+            runOnUiThread {
+                AlertDialog.Builder(this)
+                    .setTitle("Roam-proof setup")
+                    .setMessage(
+                        "Tailscale always-on VPN: ${r.optString("always_on_vpn")}\n" +
+                            "Doze allowlist: ${r.optString("doze")}\n" +
+                            "Listening on: ${r.optJSONObject("recover")?.optJSONArray("bound")?.join(", ")?.replace("\"", "")}\n\n" +
+                            "After a reboot or a new Wi-Fi, Muse/AIs reach the broker directly at http://<tailscale-ip>:17999 " +
+                            "as long as Tailscale is connected. Keep Tailscale set to Always-on VPN."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+                refreshStatus()
+            }
+        }
+    }
+
+    private val scanListener: (JSONObject) -> Unit = { json ->
+        val ts = json.optLong("ts")
+        runOnUiThread {
+            selectedScanTs = ts
+            refreshStatus()
+            if (UiPrefs.isPanelVisible(this, "scans")) {
+                binding.scroll.post { binding.scroll.smoothScrollTo(0, binding.panelScans.top) }
+            }
+        }
+    }
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
+        talk?.shutdown()
+        io.shutdownNow()
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
@@ -755,6 +1039,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_CODE_SHIZUKU = 1001
         private const val TICK_MS = 5_000L
+        private const val MIN_REFRESH_MS = 1_000L
         private const val PROBE_INTERVAL_MS = 60_000L
         private const val PROBE_TIMEOUT_MS = 5_000L
         @Volatile private var dhizukuAutoRequested = false

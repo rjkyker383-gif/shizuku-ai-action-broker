@@ -38,4 +38,10 @@ object UiPrefs {
     fun setPanelVisible(ctx: Context, panel: String, visible: Boolean) {
         p(ctx).edit().putBoolean(PANEL_PREFIX + panel, visible).apply()
     }
+
+    fun voiceName(ctx: Context): String? = p(ctx).getString("tts_voice", null)
+
+    fun setVoiceName(ctx: Context, name: String) {
+        p(ctx).edit().putString("tts_voice", name).apply()
+    }
 }

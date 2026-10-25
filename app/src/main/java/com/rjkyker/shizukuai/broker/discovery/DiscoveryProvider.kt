@@ -53,7 +53,8 @@ object DiscoveryProvider {
             tools = toolSummaries(),
             mdnsServiceName = NsdAdvertiser.serviceName(),
             mdnsRegistered = NsdAdvertiser.isRegistered(),
-            knownSecrets = knownSecrets(ctx)
+            knownSecrets = knownSecrets(ctx),
+            boundAddresses = BrokerServer.get()?.boundAddresses.orEmpty()
         )
     }
 

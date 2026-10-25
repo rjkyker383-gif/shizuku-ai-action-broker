@@ -116,7 +116,7 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
     companion object {
         private const val TAG = "McpJsonRpc"
         const val SERVER_NAME = "shizuku-ai-action-broker"
-        const val SERVER_VERSION = "1.8.0-dev"
+        const val SERVER_VERSION = "1.8.2-dev"
         const val DEFAULT_PROTOCOL_VERSION = "2024-11-05"
         val SUPPORTED_PROTOCOL_VERSIONS = setOf("2024-11-05", "2025-03-26", "2025-06-18")
 

@@ -66,4 +66,14 @@
     <string name="save_mesh_base">Save mesh base</string>
     <string name="rotate_confirm_title">Rotate MCP token?</string>
     <string name="rotate_confirm_msg">Any Termux scripts or MCP clients using the old token stop working until you update them. The new token is shown once and copied to the clipboard.</string>
+    <string name="panel_talk">◉ TALK · LIVE AGENT</string>
+    <string name="talk_start">🎙 TALK</string>
+    <string name="talk_stop">■ STOP</string>
+    <string name="talk_idle">Mic off. Tap TALK and speak — it answers out loud and keeps listening until you tap STOP or say “stop”.</string>
+    <string name="talk_voice_loading">Voice: loading…</string>
+    <string name="talk_note">Quick on-phone answers (status, “what does my last scan mean”) are instant. Everything else goes to Muse through your own ngrok host, and the reply is read aloud. Muse doesn’t offer its TTS voices to other apps, so replies use this phone’s voice (labelled “Device voice”). The mic is only on during a session. It never texts, emails, calls, or spends.</string>
+    <string name="talk_mic_denied">Microphone permission is needed for Talk.</string>
+    <string name="repair_datawedge">Repair DataWedge profile (scans → this app, all apps)</string>
+    <string name="roam_harden">Roam-proof setup (Tailscale always-on + Doze allowlist)</string>
+    <string name="scans_hint">Tap a scan below to show it. “What this means” explains each field in plain English; raw/hidden bytes follow.</string>
 </resources>
