@@ -17,6 +17,7 @@ import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.service.BrokerService
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.barcode.BarcodeCommandRuntime
+import com.rjkyker.shizukuai.broker.barcode.BarcodeLabActivity
 import com.rjkyker.shizukuai.broker.barcode.BarcodeExperienceActivity
 import com.rjkyker.shizukuai.broker.barcode.CustomBarcodeCommand
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
@@ -73,6 +74,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.shizukuPermissionButton.setOnClickListener { requestShizukuPermission() }
         binding.dhizukuButton.setOnClickListener { connectDhizuku(userInitiated = true) }
+        binding.barcodeLabButton.setOnClickListener {
+            startActivity(Intent(this, BarcodeLabActivity::class.java))
+        }
         binding.datawedgeButton.setOnClickListener {
             binding.datawedgeStatusText.text = "DataWedge: querying status/version/profiles…"
             Thread({
