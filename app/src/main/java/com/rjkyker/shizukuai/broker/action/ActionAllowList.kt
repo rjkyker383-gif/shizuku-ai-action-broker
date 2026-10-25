@@ -36,6 +36,13 @@ object ActionAllowList {
         "datawedge_last" to RiskLevel.LOW,
         "datawedge_query" to RiskLevel.LOW,
         "datawedge_results" to RiskLevel.LOW,
+        // Barcode Ghost Engine: inspection, preview-only transforms, local catalog and label generation
+        "barcode_inspect" to RiskLevel.LOW,
+        "barcode_transform_preview" to RiskLevel.LOW,
+        "barcode_command_preview" to RiskLevel.LOW,
+        "barcode_catalog_lookup" to RiskLevel.LOW,
+        "barcode_catalog_update" to RiskLevel.HIGH,
+        "barcode_label_generate" to RiskLevel.MEDIUM,
         // Dhizuku device-owner ops, 1.5.0: non-destructive and reversible only
         "dhizuku_status" to RiskLevel.LOW,
         "dhizuku_connect" to RiskLevel.LOW,
