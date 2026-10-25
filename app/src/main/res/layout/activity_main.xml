@@ -1,258 +1,491 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Command-center dashboard: fixed header + scrolling stack of MaterialCardView panels.
+     Every value shown is bound to real broker state in MainActivity (no placeholder data). -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="24dp">
+    android:background="@color/cc_bg">
 
-    <TextView
-        android:id="@+id/title"
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/header"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="@string/main_title"
-        android:textAppearance="?attr/textAppearanceHeadline5"
+        android:background="@color/cc_header"
+        android:paddingStart="16dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="12dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:fontFamily="monospace"
-        android:textAppearance="?attr/textAppearanceBody2"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/title" />
-
-    <TextView
-        android:id="@+id/scopesLabel"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:text="@string/scopes_label"
-        android:textAppearance="?attr/textAppearanceSubtitle1"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statusText" />
-
-    <ScrollView
-        android:id="@+id/scopesScroll"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintBottom_toTopOf="@id/shizukuPermissionButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/scopesLabel">
+        <View
+            android:id="@+id/headerLed"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:background="@drawable/cc_led"
+            app:layout_constraintBottom_toBottomOf="@id/title"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/title" />
 
         <TextView
-            android:id="@+id/scopesText"
-            android:layout_width="match_parent"
+            android:id="@+id/title"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
             android:fontFamily="monospace"
-            android:text="@string/no_scopes"
-            android:textIsSelectable="true" />
-    </ScrollView>
+            android:letterSpacing="0.08"
+            android:tag="accent"
+            android:text="@string/cc_title"
+            android:textColor="@color/accent_cyan"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toStartOf="@id/refreshButton"
+            app:layout_constraintStart_toEndOf="@id/headerLed"
+            app:layout_constraintTop_toTopOf="parent" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/shizukuPermissionButton"
+        <TextView
+            android:id="@+id/headerSubtitle"
+            style="@style/CC.Caption"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/main_subtitle"
+            app:layout_constraintEnd_toStartOf="@id/refreshButton"
+            app:layout_constraintStart_toStartOf="@id/title"
+            app:layout_constraintTop_toBottomOf="@id/title" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/refreshButton"
+            style="@style/CC.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="@string/refresh_scopes"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scroll"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="@string/request_shizuku"
-        app:layout_constraintBottom_toTopOf="@id/refreshButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/refreshButton"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/refresh_scopes"
-        app:layout_constraintBottom_toTopOf="@id/a11yButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/a11yButton"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/open_accessibility"
-        app:layout_constraintBottom_toTopOf="@id/datawedgeButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/datawedgeButton"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/query_datawedge"
-        app:layout_constraintBottom_toTopOf="@id/dhizukuButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/dhizukuButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/connect_dhizuku"
-        app:layout_constraintBottom_toTopOf="@id/datawedgeStatusText"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/datawedgeStatusText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:fontFamily="monospace"
-        android:text="@string/datawedge_none"
-        android:textAppearance="?attr/textAppearanceCaption"
-        android:maxLines="4"
-        android:ellipsize="end"
-        app:layout_constraintBottom_toTopOf="@id/upstreamUrlInput"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-
-    <EditText
-        android:id="@+id/upstreamUrlInput"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="@string/upstream_url_hint"
-        android:inputType="textUri"
-        android:fontFamily="monospace"
-        android:textSize="11sp"
-        android:importantForAutofill="no"
-        app:layout_constraintBottom_toTopOf="@id/saveUpstreamButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/saveUpstreamButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="@string/save_upstream"
-        app:layout_constraintBottom_toTopOf="@id/mcpTokenLabel"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/mcpTokenLabel"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/mcp_token_label"
-        android:textAppearance="?attr/textAppearanceSubtitle2"
-        app:layout_constraintBottom_toTopOf="@id/mcpTokenText"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/mcpTokenText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:fontFamily="monospace"
-        android:text="@string/mcp_token_hidden"
-        android:textIsSelectable="true"
-        android:textAppearance="?attr/textAppearanceCaption"
-        app:layout_constraintBottom_toTopOf="@id/mcpTokenButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/mcpTokenButton"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/reveal_mcp_token"
-        app:layout_constraintBottom_toTopOf="@id/batteryButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/batteryButton"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/battery_exemption"
-        app:layout_constraintBottom_toTopOf="@id/airtableKeyInput"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <EditText
-        android:id="@+id/airtableKeyInput"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="@string/airtable_key_hint"
-        android:inputType="textPassword"
-        android:fontFamily="monospace"
-        android:textSize="11sp"
-        android:importantForAutofill="no"
-        app:layout_constraintBottom_toTopOf="@id/saveAirtableButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/saveAirtableButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="@string/save_airtable"
-        app:layout_constraintBottom_toTopOf="@id/bridgeUrlsInput"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <EditText
-        android:id="@+id/bridgeUrlsInput"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:hint="@string/bridge_urls_hint"
-        android:inputType="textUri"
-        android:fontFamily="monospace"
-        android:textSize="11sp"
-        android:importantForAutofill="no"
-        app:layout_constraintBottom_toTopOf="@id/saveBridgesButton"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/saveBridgesButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="@string/save_bridges"
-        app:layout_constraintBottom_toTopOf="@id/hintText"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/hintText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:fontFamily="monospace"
-        android:text="@string/mcp_hint"
-        android:textAppearance="?attr/textAppearanceCaption"
+        android:layout_height="0dp"
+        android:fillViewport="true"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/header">
 
+        <LinearLayout
+            android:id="@+id/panelStack"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="24dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelSystems"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleSystems"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_systems" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/statusList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelMesh"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleMesh"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_mesh" />
+
+                    <TextView
+                        android:id="@+id/meshProbeText"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/mesh_not_probed" />
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/bridgeList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/probeBridgesButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/probe_bridges" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelConnections"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleConnections"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_connections" />
+
+                    <TextView
+                        android:id="@+id/connectionsHint"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/connections_hint" />
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/connectionList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelSecurity"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleSecurity"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_security" />
+
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mcp_token_label" />
+                    <TextView
+                        android:id="@+id/mcpTokenText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/cc_input_bg"
+                        android:padding="10dp"
+                        android:text="@string/mcp_token_hidden"
+                        android:textIsSelectable="true" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mcpTokenButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/reveal_mcp_token" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/rotateTokenButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/rotate_mcp_token" />
+                    <TextView
+                        android:id="@+id/securityNote"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/security_note" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelControls"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleControls"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_controls" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/shizukuPermissionButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/request_shizuku" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/dhizukuButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/connect_dhizuku" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/a11yButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/open_accessibility" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/batteryButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/battery_exemption" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/datawedgeButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/query_datawedge" />
+                    <TextView
+                        android:id="@+id/datawedgeStatusText"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:maxLines="6"
+                        android:ellipsize="end"
+                        android:text="@string/datawedge_none" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelSettings"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleSettings"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_settings" />
+
+                    <TextView
+                        android:id="@+id/settingsNote"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/settings_note" />
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mesh_base_label" />
+                    <EditText
+                        android:id="@+id/meshBaseInput"
+                        style="@style/CC.Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="@string/mesh_base_hint"
+                        android:inputType="textUri" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/saveMeshBaseButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_mesh_base" />
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/upstream_url_label" />
+                    <EditText
+                        android:id="@+id/upstreamUrlInput"
+                        style="@style/CC.Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="@string/upstream_url_hint"
+                        android:inputType="textUri" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/saveUpstreamButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_upstream" />
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/bridge_urls_label" />
+                    <EditText
+                        android:id="@+id/bridgeUrlsInput"
+                        style="@style/CC.Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="@string/bridge_urls_hint"
+                        android:inputType="textUri|textMultiLine" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/saveBridgesButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_bridges" />
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/airtable_key_label" />
+                    <EditText
+                        android:id="@+id/airtableKeyInput"
+                        style="@style/CC.Input"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="@string/airtable_key_hint"
+                        android:inputType="textPassword" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/saveAirtableButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/save_airtable" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelScopes"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleScopes"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/scopes_label" />
+
+                    <TextView
+                        android:id="@+id/scopesText"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/no_scopes" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelCustomize"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleCustomize"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_customize" />
+
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/customize_panels" />
+                    <LinearLayout
+                        android:id="@+id/panelToggleContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                    <TextView
+                        style="@style/CC.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/customize_accent" />
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/accentGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="true" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

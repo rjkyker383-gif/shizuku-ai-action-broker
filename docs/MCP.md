@@ -1,4 +1,4 @@
-# MCP endpoint (broker 1.7.0-dev)
+# MCP endpoint (broker 1.8.0-dev)
 
 The always-on local server binds **only** to `127.0.0.1:17999` (same process as
 `BrokerService` / `BootReceiver`). It speaks MCP JSON-RPC 2.0 over HTTP and a
@@ -8,7 +8,9 @@ minimal WebSocket.
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET | `/health` | no | Keepalive for Termux menu. Returns `mcp:true`, `auth_required:true`. Never prints the token. |
+| GET | `/health` | no | Keepalive + live status booleans (see below). Never prints the token or any key. |
+| GET | `/discover` | no | **AI discovery manifest** (1.8.0). Read-only, no credentials. CORS `*`. |
+| GET | `/.well-known/mcp.json` | no | Same manifest at the well-known path (`/.well-known/mcp` also works). |
 | POST | `/mcp` | **yes** | MCP JSON-RPC (`initialize`, `tools/list`, `tools/call`, `ping`, `notifications/initialized`). |
 | GET | `/ws` | **yes** | WebSocket upgrade (`Sec-WebSocket-Protocol: mcp`). Same JSON-RPC as `/mcp`. |
 | POST | `/action` | **yes** | Legacy ActionRouter JSON (`{op:…}`). HIGH ops need `"confirm":true`. |
@@ -24,7 +26,8 @@ Authorization: Bearer <token>
 X-Broker-Token: <token>
 ```
 
-WebSocket may also pass `?token=` (still localhost-only). CORS `*` was removed.
+WebSocket may also pass `?token=` (still localhost-only). CORS `*` was removed from every
+authenticated route; only the open, read-only discovery manifest sends `Access-Control-Allow-Origin: *`.
 
 HIGH-risk tools also need `arguments.confirm: true` **or** header `X-Confirm: true`.
 
@@ -61,12 +64,13 @@ curl -s $BASE/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: applicatio
 | `wedge_sync_control` | MEDIUM | `snapshot` \| `apply_local` \| `push_upstream` \| `status`. |
 | `upstream_mcp_relay` | MEDIUM | Forward JSON-RPC to the configured upstream (`method` default `tools/call`, `payload` = params). |
 | `get_system_status` | LOW | Local server + upstream host (no secrets) + Shizuku/Dhizuku/a11y/battery. |
-| `bridge_relay` | MEDIUM | Relay JSON-RPC to a named bridge `magic`/`war`/`ether`/`upstream`. Per-bridge URLs from settings (nothing hardcoded); health-checked first. |
+| `bridge_relay` | MEDIUM | Relay JSON-RPC to a named bridge `android`/`spark`/`ether`/`war`/`magic`/`upstream`. URLs prefilled with built-in mesh defaults (editable; no token built in); health-checked first. |
 | `airtable_log` | MEDIUM | Log one record to an owner Airtable base (`appQkHjQwQuyzVT99`/`appQDYTaD6gi64g7M`). API key read from SecurePrefs at runtime; queues + no-ops when unset. |
 | `wifi_presence_scan` | LOW | Honest RSSI/link-variance presence & motion score. **Near-device only; cannot see through walls or identify people** (Android exposes no Wi-Fi CSI). |
 | `zebra_wifi_config` | HIGH | No-license Wi-Fi control (WifiManager/DPM/shell). status is free; mutating ops need `confirm:true`. **No license bypass.** |
 | `zebra_datawedge_profile` | MEDIUM | No-license DataWedge profile CRUD (list/active/create/set_config/switch). |
 | `zebra_scanner_control` | MEDIUM | No-license scanner enable/disable + soft scan via DataWedge. |
+| `discovery_info` | LOW | Returns `{ok, manifest}` — the same manifest as `GET /discover`, for clients already connected. Still requires the bearer token like every tool. |
 
 ## Upstream MCP (any wifi)
 
@@ -84,9 +88,10 @@ you still want a fast path at home; keep the **primary** as:
 2. **HTTPS tunnel** — ngrok / Cloudflare tunnel / similar, or
 3. Any other reachable `http(s)://…/mcp`.
 
-There is **no** documented public/ngrok URL for the 8486 node checked into this
-repo, so the built-in default is **empty**. Paste the URL in MainActivity
-(“Save upstream URL”) or:
+Since 1.8.0 the primary upstream is **prefilled** with the built-in public mesh default
+`https://presocial-endocrinopathic-fumiko.ngrok-free.dev/android/mcp` (see *Built-in default
+connection URLs* below). Override it in MainActivity (Settings → “Save upstream URL”; saving a blank
+field restores the default) or:
 
 ```kotlin
 SecurePrefs.setUpstreamMcpUrl(ctx, "http://100.x.x.x:8486/mcp")
@@ -121,11 +126,11 @@ JSON-RPC). It never invents a successful result.
 ### Bridge mesh relay
 
 `bridge_relay{bridge, method, params, timeout_ms}` forwards a JSON-RPC call to one of
-`magic` / `war` / `ether` / `upstream`. Every bridge URL is read from settings
-(`SecurePrefs.setBridgeUrl(ctx, "magic", "https://…/mcp")`; `upstream` reuses the Upstream MCP
-URL). **No bridge address is hardcoded** — a bridge with no URL set returns `ok:false`. Each
-bridge is health-checked (`GET {origin}/health`) before the call; an unhealthy bridge is not
-relayed to and never returns a faked result.
+`android` / `spark` / `ether` / `war` / `magic` / `upstream`. Bridge URLs come from SecurePrefs and
+(since 1.8.0) default to `<mesh base>/<bridge>/mcp` on the built-in public mesh host; override with
+`SecurePrefs.setBridgeUrl(ctx, "magic", "https://…/mcp")` or the Settings panel. No token is ever
+built in. Each bridge is health-checked first (`…/<bridge>/health` for path-mounted bridges, else
+`{origin}/health`); an unhealthy bridge is not relayed to and never returns a faked result.
 
 ### Airtable telemetry
 
@@ -152,6 +157,118 @@ tomography is impossible from an app. The response always carries `cannot_see_th
 reflection into licensing daemons, or forged license keys are implemented.** Features that genuinely
 require a paid license (Fusion Advanced Wi-Fi tiers, Enterprise Browser, OEMConfig premium, premium
 StageNow profiles, …) are intentionally omitted and listed in `ZebraCapabilityLayer.kt`.
+
+## Built-in default connection URLs (1.8.0)
+
+These ship **prefilled** so nothing needs manual entry on first launch. They are public connection
+URLs, **not secrets**; every one is editable/overridable in the app (Settings panel), and saving a
+blank field restores the default. **No token, bearer value or Airtable key is ever built in** —
+those stay blank in SecurePrefs until the owner sets them.
+
+| Setting | Built-in default |
+|---------|------------------|
+| Local MCP | `http://127.0.0.1:17999/mcp` (ws `/ws`) — the on-device server |
+| Mesh base | `https://presocial-endocrinopathic-fumiko.ngrok-free.dev` |
+| Upstream MCP | `<mesh base>/android/mcp` |
+| Bridge `android` | `<mesh base>/android/mcp` |
+| Bridge `spark` | `<mesh base>/spark/mcp` |
+| Bridge `ether` | `<mesh base>/ether/mcp` |
+| Bridge `war` | `<mesh base>/war/mcp` |
+| Bridge `magic` | `<mesh base>/magic/mcp` |
+
+Upstream and bridge defaults are derived from the mesh base at read time, so changing the mesh base
+moves every bridge you have not overridden.
+
+## AI discovery (1.8.0)
+
+Goal: any AI / MCP client can find the broker, learn what it does, and learn how to connect —
+without ever being handed a credential.
+
+### 1. Open manifest: `GET /discover` and `GET /.well-known/mcp.json`
+
+Unauthenticated, read-only, `Cache-Control: no-store`. Shape (`schema: shizuku-broker-discovery/1`):
+
+| Field | Contents |
+|-------|----------|
+| `app` | `id`, `name`, `version`, `version_code` |
+| `device` | `manufacturer`, `model`, `android_release`, `sdk_int` |
+| `mcp` | `server_info`, `running`, `protocol`, `protocol_versions`, `default_protocol_version`, `methods`, `transports` (`POST /mcp`, WebSocket `/ws` subprotocol `mcp`) |
+| `auth` | `required: true`, `scheme: bearer`, accepted header templates, `websocket_query_param`, `high_risk_confirmation`, `credential_source` (a sentence — never the value) |
+| `open_endpoints` | `/health`, `/discover`, `/.well-known/mcp.json` |
+| `connections[]` | `loopback` (`mcp_http`, `mcp_ws`, `discover`, `health`), `tailscale_<100.x>` (node address + how: adb over Tailscale + `adb forward`), `mesh_<bridge>` for android/spark/ether/war/magic (`mcp_http`, `health`), `upstream` |
+| `mesh_base` | The mesh base URL |
+| `mdns` | `service_types`, `service_name`, `registered`, `port`, `txt` |
+| `tools[]` / `tool_count` | `name`, `risk` (LOW/MEDIUM/HIGH), one-line `description` — no schemas, no args |
+| `limits` | Honest limits: Wi-Fi presence is near-device RSSI only (no through-wall, no CSI, no people identification); Zebra uses no-license APIs only |
+| `credentials_included` | always `false` |
+
+Credential safety (enforced in `DiscoveryManifest` and unit-tested):
+- URLs are stripped of user-info, query and fragment (a `?token=` can never ride along).
+- A final pass redacts any string containing a real SecurePrefs secret (MCP token, Airtable key,
+  upstream/bridge tokens) and removes any key containing `token`/`secret`/`password`/`psk`/`api_key`/…
+- Connection URLs come from SecurePrefs (with the built-in non-secret defaults above); no LAN IP is hardcoded.
+
+> The HTTP server still binds **127.0.0.1 only**. The manifest tells remote AIs to come in via a mesh
+> bridge, or adb over Tailscale + `adb forward tcp:17999 tcp:17999`.
+
+### 2. mDNS / DNS-SD (Bonjour / zeroconf)
+
+`BrokerService` registers two services with Android `NsdManager` on start and unregisters on stop:
+`_mcp._tcp` and `_broker._tcp`, name `ShizukuBroker-<model>`, port `17999`, TXT:
+
+```
+path=/discover  wk=/.well-known/mcp.json  mcp=/mcp  ws=/ws  auth=bearer
+bind=127.0.0.1  ver=1.8.0-dev  id=com.rjkyker.shizukuai.broker
+mesh=https://presocial-endocrinopathic-fumiko.ngrok-free.dev/android/mcp
+```
+
+A LAN peer browsing `_mcp._tcp` (e.g. `avahi-browse -rt _mcp._tcp`, `dns-sd -B _mcp._tcp`) finds the
+broker and reads the TXT. Because the port is loopback-bound, the useful pointer for a LAN peer is
+`mesh=` (or adb). No secret is ever placed in TXT.
+
+### 3. `discovery_info` MCP tool
+
+LOW risk, bearer-auth like every other tool:
+
+```sh
+curl -s -X POST $BASE/mcp -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"discovery_info","arguments":{}}}'
+```
+
+### 4. Flow for an AI client
+
+1. Find it: mDNS `_mcp._tcp`, or `GET http://127.0.0.1:17999/.well-known/mcp.json` on-device /
+   through `adb forward`.
+2. Read `connections[]` and pick a transport; read `tools[]` to see what is possible.
+3. Get the bearer token from the owner (Security panel → Reveal / Rotate). Discovery never serves it.
+4. `initialize` → `tools/list` → `tools/call` on `/mcp` or `/ws`; HIGH-risk tools need `X-Confirm: true`.
+
+### Expanded `/health` (open, booleans/ids only)
+
+`ok, port, accessibility, package, version, mcp, auth_required, endpoints{mcp,ws,action,health,discover,well_known}`,
+plus `server{running,host,port,bearer_required}`, `shizuku{binder_alive,permission_granted}`,
+`dhizuku{installed,granted}`, `upstream_configured`, `airtable_key_set`,
+`wifi_presence{state,last_scan_at_ms,last_ok,last_presence_detected,last_motion_score,last_confidence,last_error,kind,cannot_see_through_walls}`,
+`mdns{registered,types}`, `pid`, `uptime_ms`.
+
+## Command-center dashboard (1.8.0)
+
+MainActivity is a dark, panelled dashboard (MaterialCardView panels + RecyclerView status rows with
+LEDs). Every value is bound to real state; nothing is mocked.
+
+- **Systems**: MCP server (port + bearer required), Shizuku binder/permission/backend, Dhizuku
+  device-owner, Accessibility, Upstream reachable (live probe), Airtable key set (bool), Wi-Fi presence
+  engine state, mDNS registration, battery-optimization exemption, app version/pid/uptime.
+- **Bridge mesh**: android/spark/ether/war/magic/upstream, probed via `GET …/health` every 60 s while
+  the app is open (or on tap), with COPY per URL.
+- **Connections & discovery**: the same entries as the `/discover` manifest, COPY on each.
+- **Security**: reveal/copy token, one-tap **Rotate MCP token** (confirm → new token shown once,
+  hidden again when the app is backgrounded).
+- **Controls**: Shizuku / Dhizuku / Accessibility / battery / DataWedge.
+- **Settings**: prefilled mesh base, upstream URL and bridge URLs (editable), Airtable key (write-only,
+  encrypted).
+- **Customize**: show/hide each panel and pick an accent (cyan/amber/magenta/green/red); persisted in
+  non-secret `broker_ui_prefs` SharedPreferences.
 
 ## Persistence
 

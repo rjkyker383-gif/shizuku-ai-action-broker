@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- mDNS / NSD advertisement of _mcp._tcp + _broker._tcp -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Required to read connected-AP RSSI/SSID on Q+ for the presence sensor -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />

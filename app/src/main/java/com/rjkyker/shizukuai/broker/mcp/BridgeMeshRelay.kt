@@ -17,7 +17,8 @@ import java.util.concurrent.atomic.AtomicLong
  * Unified mesh relay that forwards one JSON-RPC MCP call to a *named* upstream bridge.
  *
  * Bridges:
- *  - "magic", "war", "ether": each has its own URL in SecurePrefs (per-bridge settings list).
+ *  - "android", "spark", "ether", "war", "magic": each has its own URL in SecurePrefs, prefilled with
+ *    the built-in public mesh default <mesh base>/<name>/mcp (editable in the app).
  *  - "upstream": the app's saved "Upstream MCP URL" setting (SecurePrefs.getUpstreamMcpUrl).
  *
  * Nothing is hardcoded to 192.168.1.158 — every target URL comes from SecurePrefs and is empty
@@ -37,7 +38,7 @@ class BridgeMeshRelay(private val context: Context) {
     /** Resolve a bridge's configured MCP URL (empty string when unset). */
     fun urlFor(bridge: String): String = when (bridge.lowercase()) {
         "upstream" -> SecurePrefs.getUpstreamMcpUrl(context)
-        "magic", "war", "ether" -> SecurePrefs.getBridgeUrl(context, bridge.lowercase())
+        "android", "spark", "magic", "war", "ether" -> SecurePrefs.getBridgeUrl(context, bridge.lowercase())
         else -> ""
     }
 
@@ -94,6 +95,7 @@ class BridgeMeshRelay(private val context: Context) {
                 connectTimeout = timeoutMs.toInt().coerceIn(500, 20_000)
                 readTimeout = timeoutMs.toInt().coerceIn(500, 20_000)
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("ngrok-skip-browser-warning", "1")
                 val token = tokenFor(bridge)
                 if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")
             }
@@ -180,6 +182,7 @@ class BridgeMeshRelay(private val context: Context) {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json, text/event-stream")
+            setRequestProperty("ngrok-skip-browser-warning", "1")
             if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")
         }
         return try {
@@ -229,7 +232,9 @@ class BridgeMeshRelay(private val context: Context) {
     private fun healthUrlFor(mcpUrl: String): String? = try {
         val u = URL(mcpUrl)
         val portPart = if (u.port > 0 && u.port != u.defaultPort) ":${u.port}" else ""
-        "${u.protocol}://${u.host}$portPart/health"
+        // Path-mounted mesh bridges (…/android/mcp) expose …/android/health; root MCPs use /health.
+        val prefix = u.path.orEmpty().trimEnd('/').removeSuffix("/mcp")
+        "${u.protocol}://${u.host}$portPart$prefix/health"
     } catch (_: Exception) {
         null
     }
@@ -249,6 +254,6 @@ class BridgeMeshRelay(private val context: Context) {
 
     companion object {
         private const val TAG = "BridgeMeshRelay"
-        val BRIDGES = listOf("magic", "war", "ether", "upstream")
+        val BRIDGES = listOf("android", "spark", "ether", "war", "magic", "upstream")
     }
 }

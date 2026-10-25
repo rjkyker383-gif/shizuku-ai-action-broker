@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased / 1.8.0-dev
+- **AI discovery layer.** New open, read-only endpoints `GET /discover` and `GET /.well-known/mcp.json`
+  serve a capability manifest (`schema: shizuku-broker-discovery/1`): app/device/version, MCP
+  protocol + transports, auth requirements, every connection method (loopback, Tailscale node
+  address, public mesh bridges android/spark/ether/war/magic, upstream, mDNS) and tool names + risk +
+  one-line descriptions. Never contains a credential: URLs are stripped of user-info/query/fragment,
+  credential-like keys are removed and any real SecurePrefs secret is redacted (unit-tested).
+- **mDNS / NSD** (`NsdAdvertiser`): registers `_mcp._tcp` + `_broker._tcp` (port 17999, TXT
+  `path=/discover`, `wk`, `mcp`, `ws`, `auth=bearer`, `bind`, `ver`, `id`, `mesh`) on service start,
+  unregisters on stop. Added `CHANGE_WIFI_MULTICAST_STATE`.
+- **MCP tool `discovery_info`** (LOW, bearer auth) returns the same manifest. Allow-list + schema updated.
+- **Expanded `/health`** (still open, booleans/ids only): server, shizuku, dhizuku, accessibility,
+  upstream_configured, airtable_key_set, wifi_presence state, mdns, pid, uptime_ms, discover endpoints.
+- **Built-in default connection URLs** (non-secret, editable): mesh base
+  `https://presocial-endocrinopathic-fumiko.ngrok-free.dev`; upstream + bridges default to
+  `<mesh base>/<bridge>/mcp` for android/spark/ether/war/magic. Tokens and the Airtable key are still
+  never built in. Bridge set expanded from magic/war/ether to android/spark/ether/war/magic.
+  Bridge health for path-mounted bridges now probes `…/<bridge>/health`. Relay requests send
+  `ngrok-skip-browser-warning`.
+- **Command-center dashboard**: MainActivity redesigned as a dark, panelled MaterialCardView +
+  RecyclerView dashboard with status LEDs bound to real state, live bridge probes, a connections
+  panel with COPY buttons, one-tap Rotate MCP token (shown once), show/hide panels + accent color
+  (persisted). Existing settings (upstream URL, Airtable key, bridge URLs) remain; new mesh base field.
+- `WifiPresenceEngine` now exposes honest engine state (idle/scanning/last result) for `/health` + UI.
+- Version 1.8.0-dev (versionCode 10). MCP serverInfo 1.8.0-dev. Tests: `DiscoveryManifestTest` (8).
+
 ## Unreleased / 1.7.0-dev
 - **BridgeMeshRelay** + MCP tool `bridge_relay{bridge,method,params}`: relay JSON-RPC to
   `magic`/`war`/`ether`/`upstream`. Per-bridge URLs in SecurePrefs (nothing hardcoded; no 192.168

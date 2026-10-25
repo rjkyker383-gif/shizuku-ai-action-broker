@@ -51,7 +51,48 @@ object WifiPresenceEngine {
      * Must be called off the main thread (it sleeps between samples). Honest about limits: the
      * response always carries `cannot_see_through_walls=true` and a `disclaimer`.
      */
+    @Volatile private var scanning = false
+    @Volatile private var lastScanAtMs = 0L
+    @Volatile private var lastOk = false
+    @Volatile private var lastPresence = false
+    @Volatile private var lastMotionScore = 0.0
+    @Volatile private var lastConfidence = 0.0
+    @Volatile private var lastError = ""
+
+    /** Engine state for /health + dashboard: idle/scanning + last result summary (no raw samples). */
+    fun stateJson(): JSONObject = JSONObject()
+        .put("state", when {
+            scanning -> "scanning"
+            lastScanAtMs == 0L -> "idle_never_run"
+            lastOk -> "idle"
+            else -> "idle_last_failed"
+        })
+        .put("last_scan_at_ms", lastScanAtMs)
+        .put("last_ok", lastOk)
+        .put("last_presence_detected", lastPresence)
+        .put("last_motion_score", lastMotionScore)
+        .put("last_confidence", lastConfidence)
+        .put("last_error", lastError)
+        .put("kind", "rssi_presence_motion_near_device")
+        .put("cannot_see_through_walls", true)
+
     fun scan(context: Context, durationMs: Long): JSONObject {
+        scanning = true
+        try {
+            val r = scanInternal(context, durationMs)
+            lastOk = r.optBoolean("ok", false)
+            lastPresence = r.optBoolean("presence_detected", false)
+            lastMotionScore = r.optDouble("motion_score", 0.0).let { if (it.isNaN()) 0.0 else it }
+            lastConfidence = r.optDouble("confidence", 0.0).let { if (it.isNaN()) 0.0 else it }
+            lastError = if (lastOk) "" else r.optString("error")
+            return r
+        } finally {
+            lastScanAtMs = System.currentTimeMillis()
+            scanning = false
+        }
+    }
+
+    private fun scanInternal(context: Context, durationMs: Long): JSONObject {
         val dur = durationMs.coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
         val wifi = context.applicationContext
             .getSystemService(Context.WIFI_SERVICE) as? WifiManager

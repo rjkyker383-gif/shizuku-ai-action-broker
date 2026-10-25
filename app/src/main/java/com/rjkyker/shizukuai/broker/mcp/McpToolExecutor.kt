@@ -14,6 +14,7 @@ import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.WedgeSyncManager
+import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.server.ActionRouter
 import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
@@ -59,6 +60,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_ZEBRA_DW -> ZebraCapabilityLayer.datawedgeProfile(context, args)
                 TOOL_ZEBRA_SCANNER -> ZebraCapabilityLayer.scannerControl(context, args)
                 TOOL_STATUS -> systemStatus()
+                TOOL_DISCOVERY -> JSONObject().put("ok", true).put("manifest", DiscoveryProvider.manifest(context))
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
@@ -442,13 +444,14 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_ZEBRA_WIFI = "zebra_wifi_config"
         const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
         const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
+        const val TOOL_DISCOVERY = "discovery_info"
         private const val KEYCODE_APP_SWITCH = 187
 
         val TOOL_NAMES = setOf(
             TOOL_EXEC_SHELL, TOOL_DUMP_UI, TOOL_GESTURE, TOOL_DHIZUKU,
             TOOL_DATAWEDGE, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
             TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
-            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER
+            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY
         )
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
@@ -573,11 +576,11 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             .put(
                 tool(
                     TOOL_BRIDGE_RELAY,
-                    "Relay a JSON-RPC MCP call to a named bridge (magic|war|ether|upstream). Each bridge URL " +
-                        "comes from the app settings (nothing hardcoded); the bridge is health-checked first and " +
+                    "Relay a JSON-RPC MCP call to a named bridge (android|spark|ether|war|magic|upstream). Each bridge URL " +
+                        "comes from the app settings (prefilled with the public mesh default, editable; no token baked in); the bridge is health-checked first and " +
                         "an unreachable bridge returns ok=false instead of a faked result.",
                     JSONObject()
-                        .put("bridge", enumProp(listOf("magic", "war", "ether", "upstream")))
+                        .put("bridge", enumProp(listOf("android", "spark", "ether", "war", "magic", "upstream")))
                         .put("method", prop("string", "JSON-RPC method, default tools/call"))
                         .put("params", JSONObject().put("type", "object").put("description", "JSON-RPC params"))
                         .put("timeout_ms", prop("integer", "default 15000")),
@@ -644,6 +647,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                         .put("op", enumProp(listOf("status", "enable", "disable", "soft_scan_start", "soft_scan_stop")))
                         .put("profile", prop("string", "profile for enable/disable, default ShizukuAiBroker")),
                     listOf("op")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_DISCOVERY,
+                    "Return the broker's discovery manifest: app/device/version, every connection method " +
+                        "(loopback, Tailscale, public mesh bridges, upstream, mDNS) and tool names + risk. No secrets.",
+                    JSONObject(),
+                    emptyList()
                 )
             )
 

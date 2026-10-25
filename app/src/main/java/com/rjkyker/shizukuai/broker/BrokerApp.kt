@@ -8,5 +8,7 @@ class BrokerApp : Application() {
         super.onCreate()
         // Listen for DataWedge RESULT_ACTION as soon as the process starts.
         DataWedgeResultReceiver.ensureRegistered(this)
+        // Prefill built-in, non-secret connection URLs (mesh/bridges/upstream) on first run.
+        runCatching { com.rjkyker.shizukuai.broker.util.SecurePrefs.seedDefaultUrls(this) }
     }
 }

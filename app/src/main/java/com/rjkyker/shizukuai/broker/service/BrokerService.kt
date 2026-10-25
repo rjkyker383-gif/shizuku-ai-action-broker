@@ -21,6 +21,7 @@ import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.mcp.UpstreamMcpRelayClient
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import com.rjkyker.shizukuai.broker.discovery.NsdAdvertiser
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.ui.MainActivity
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
@@ -81,7 +82,10 @@ class BrokerService : Service() {
     override fun onCreate() {
         super.onCreate()
         SecurePrefs.ensureMcpToken(applicationContext)
+        SecurePrefs.seedDefaultUrls(applicationContext)
         registerBinders()
+        // mDNS/DNS-SD advertisement (_mcp._tcp + _broker._tcp) so LAN AIs can find /discover.
+        runCatching { NsdAdvertiser.register(applicationContext) }
         // Periodic Airtable telemetry flush (no-ops until an API key is set in the app).
         runCatching { AirtableSyncWorker.schedulePeriodic(applicationContext) }
         handler.postDelayed(watchdog, WATCHDOG_MS)
@@ -161,7 +165,7 @@ class BrokerService : Service() {
             .setContentText(status)
             .setStyle(NotificationCompat.BigTextStyle().bigText(
                 "Local MCP on 127.0.0.1:${BrokerServer.PORT}\n" +
-                    "POST /mcp · GET /ws · POST /action · GET /health\n" +
+                    "POST /mcp · GET /ws · POST /action · GET /health · GET /discover\n" +
                     "Upstream: ${if (upHost.isEmpty()) "(not configured — set in app)" else upHost}\n" +
                     "Auth required (Bearer token). Boot-persistent."
             ))
@@ -181,6 +185,7 @@ class BrokerService : Service() {
             }
             bindersRegistered = false
         }
+        runCatching { NsdAdvertiser.unregister(applicationContext) }
         BrokerServer.get()?.stop()
         super.onDestroy()
     }

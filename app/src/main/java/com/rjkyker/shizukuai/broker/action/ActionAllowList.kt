@@ -61,6 +61,8 @@ object ActionAllowList {
         "zebra_wifi_config" to RiskLevel.HIGH,
         "zebra_datawedge_profile" to RiskLevel.MEDIUM,
         "zebra_scanner_control" to RiskLevel.MEDIUM,
+        // 1.8.0 AI discovery manifest, read-only
+        "discovery_info" to RiskLevel.LOW,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

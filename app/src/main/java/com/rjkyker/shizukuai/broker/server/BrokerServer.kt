@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
+import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.mcp.McpToolExecutor
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import org.json.JSONObject
@@ -28,6 +30,8 @@ import javax.crypto.spec.SecretKeySpec
  *
  * Routes:
  * - GET  /health              — unauthenticated keepalive (no secrets); flags mcp + auth_required
+ * - GET  /discover, /.well-known/mcp.json — unauthenticated read-only AI discovery manifest
+ *                               (who/what/how-to-connect; never a credential)
  * - GET  /ui, /uidump         — a11y snapshot (auth required)
  * - GET  /datawedge*          — DataWedge results / live query (auth required)
  * - POST /action              — ActionRouter JSON body (auth required)
@@ -163,6 +167,7 @@ class BrokerServer(private val context: Context) {
             when {
                 method == "OPTIONS" -> writeResponse(socket, 204, "text/plain", "", cors = false)
                 method == "GET" && path == "/health" -> {
+                    // Open endpoint: booleans / ids only, never a secret.
                     val json = JSONObject()
                         .put("ok", true)
                         .put("port", PORT)
@@ -175,8 +180,20 @@ class BrokerServer(private val context: Context) {
                             .put("mcp", "/mcp")
                             .put("ws", "/ws")
                             .put("action", "/action")
-                            .put("health", "/health"))
+                            .put("health", "/health")
+                            .put("discover", "/discover")
+                            .put("well_known", "/.well-known/mcp.json"))
+                    val snap = runCatching { BrokerStatusSnapshot.build(context) }.getOrNull()
+                    if (snap != null) {
+                        for (k in snap.keys()) json.put(k, snap.get(k))
+                    }
                     writeResponse(socket, 200, "application/json", json.toString(), cors = false)
+                }
+                method == "GET" && (path == "/discover" || path == "/.well-known/mcp.json" ||
+                    path == "/.well-known/mcp") -> {
+                    // Open, read-only: advertises how to connect. Tools still need the bearer token.
+                    val manifest = DiscoveryProvider.manifest(context)
+                    writeResponse(socket, 200, "application/json", manifest.toString(), cors = true)
                 }
                 method == "GET" && path == "/ws" -> {
                     // Non-upgrade GET: tell clients how to connect.
@@ -242,7 +259,7 @@ class BrokerServer(private val context: Context) {
                 else -> writeResponse(
                     socket, 404, "application/json",
                     JSONObject().put("ok", false).put("error", "not found")
-                        .put("hint", "GET /health | POST /mcp | GET /ws | POST /action").toString()
+                        .put("hint", "GET /health | GET /discover | GET /.well-known/mcp.json | POST /mcp | GET /ws | POST /action").toString()
                 )
             }
         } catch (e: Exception) {
@@ -349,7 +366,10 @@ class BrokerServer(private val context: Context) {
             if (contentType.isNotEmpty()) append("Content-Type: $contentType; charset=utf-8\r\n")
             append("Content-Length: ${bytes.size}\r\n")
             append("Connection: close\r\n")
-            if (cors) append("Access-Control-Allow-Origin: *\r\n")
+            if (cors) {
+                append("Access-Control-Allow-Origin: *\r\n")
+                append("Cache-Control: no-store\r\n")
+            }
             append("\r\n")
         }
         val out = socket.getOutputStream()
