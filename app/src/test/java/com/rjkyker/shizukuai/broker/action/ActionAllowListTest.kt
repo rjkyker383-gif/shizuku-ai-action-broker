@@ -13,7 +13,9 @@ class ActionAllowListTest {
             "tap", "swipe", "text", "key", "ui_dump", "shell",
             "admin_scopes", "admin_perm", "admin_suspend", "launch",
             "datawedge_status", "datawedge_version", "datawedge_profiles",
-            "datawedge_active_profile", "datawedge_soft_scan", "datawedge_switch_profile"
+            "datawedge_active_profile", "datawedge_soft_scan", "datawedge_switch_profile",
+            "barcode_inspect", "barcode_transform_preview", "barcode_command_preview",
+            "barcode_catalog_lookup", "barcode_catalog_update", "barcode_label_generate"
         ).forEach { op ->
             assertTrue("$op should be allowed", ActionAllowList.isAllowed(op))
             assertNotNull(ActionAllowList.riskLevelFor(op))
@@ -40,7 +42,9 @@ class ActionAllowListTest {
         assertTrue(snap.contains("tap"))
         assertTrue(snap.contains("shell"))
         assertTrue(snap.contains("GET_DEVICE_INFO"))
-        assertTrue(snap.size >= 24)
+        assertTrue(snap.contains("barcode_inspect"))
+        assertTrue(snap.contains("barcode_catalog_update"))
+        assertTrue(snap.size >= 30)
     }
 }
 
