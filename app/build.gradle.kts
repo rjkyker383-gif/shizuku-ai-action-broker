@@ -52,11 +52,11 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     // Dhizuku API: borrow Dhizuku's Device Owner after the user approves the broker in Dhizuku.
-    // 2.5.4 = newest release that compiles against SDK 34 (2.6.0 needs compileSdk 37). Pure-Java AAR; any transitive kotlin-stdlib is excluded to stay on the project Kotlin 1.9 stdlib.
     implementation("io.github.iamr0s:Dhizuku-API:2.5.4") {
         exclude(group = "org.jetbrains.kotlin")
     }
-    // Needed for Dhizuku's documented binder-wrapped DevicePolicyManager pattern (mService field).
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+    // Local barcode label generation.
+    implementation("com.google.zxing:core:3.5.4")
     testImplementation("junit:junit:4.13.2")
 }
