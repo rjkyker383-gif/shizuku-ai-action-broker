@@ -273,6 +273,11 @@ class MainActivity : AppCompatActivity() {
     private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "DashboardIO").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
     }
+    /** Never crash the whole process (and the MCP server) if a callback lands after onDestroy shut [io] down. */
+    private fun ioSafe(block: () -> Unit) {
+        if (io.isShutdown || isDestroyed) return
+        try { io.execute(block) } catch (_: java.util.concurrent.RejectedExecutionException) { }
+    }
     @Volatile private var refreshInFlight = false
     @Volatile private var refreshQueued = false
     private var lastRefreshAt = 0L
@@ -312,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         val scanVer = ScanHistoryStore.version.get()
         val needScans = scanVer != lastScanVersion
         val sel = selectedScanTs
-        io.execute {
+        ioSafe {
             val st = runCatching { buildUiState(needScans, scanVer, sel) }.getOrNull()
             runOnUiThread {
                 refreshInFlight = false
@@ -969,7 +974,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun repairDataWedge() {
         binding.datawedgeStatusText.text = "DataWedge: repairing profile (broker + Profile0 intent output)…"
-        io.execute {
+        ioSafe {
             val r = DataWedgeRepair.apply(applicationContext)
             runOnUiThread {
                 binding.datawedgeStatusText.text = "DataWedge repair sent ${r.optJSONArray("steps")?.length() ?: 0} commands → " +
@@ -981,7 +986,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun roamHarden() {
         Toast.makeText(this, "Roam-proof setup running…", Toast.LENGTH_SHORT).show()
-        io.execute {
+        ioSafe {
             val r = RoamKeeper.hardenNow(applicationContext)
             runOnUiThread {
                 AlertDialog.Builder(this)
