@@ -63,8 +63,6 @@ class BarcodeGhostEngineTest {
 
     @Test
     fun onlyRegisteredBgxCommandsAreAccepted() {
-    @Test
-    fun onlyRegisteredBgxCommandsAreAccepted() {
         val good = BarcodeGhostEngine.parseCommand("BGX:1|TYPE=GAME|ID=NEON_MAZE|VERSION=1")
         assertTrue(good is CommandParseResult.Valid)
         assertEquals("NEON_MAZE", (good as CommandParseResult.Valid).command.id)
