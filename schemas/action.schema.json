@@ -42,6 +42,7 @@
         "barcode_inspect",
         "barcode_transform_preview",
         "barcode_command_preview",
+        "barcode_plan_instruction",
         "barcode_catalog_lookup",
         "barcode_catalog_update",
         "barcode_label_generate",
