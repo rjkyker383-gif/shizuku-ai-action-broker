@@ -46,6 +46,10 @@
     <string name="panel_controls">▶ Controls</string>
     <string name="panel_settings">⚙ Settings</string>
     <string name="panel_customize">✎ Customize</string>
+    <string name="panel_scans">▣ SCAN OUTPUT</string>
+    <string name="scans_empty">No scans yet — trigger the imager or send a test intent.</string>
+    <string name="scan_copy">Copy detail</string>
+    <string name="scan_clear">Clear</string>
     <string name="customize_panels">Show panels</string>
     <string name="customize_accent">Accent color</string>
     <string name="copy">COPY</string>

@@ -36,6 +36,7 @@ object ActionAllowList {
         "datawedge_last" to RiskLevel.LOW,
         "datawedge_query" to RiskLevel.LOW,
         "datawedge_results" to RiskLevel.LOW,
+        "scan_history" to RiskLevel.LOW,
         // Dhizuku device-owner ops, 1.5.0: non-destructive and reversible only
         "dhizuku_status" to RiskLevel.LOW,
         "dhizuku_connect" to RiskLevel.LOW,

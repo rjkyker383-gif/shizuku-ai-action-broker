@@ -33,6 +33,9 @@ import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.databinding.ActivityMainBinding
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
+import com.rjkyker.shizukuai.broker.datawedge.ScanParsers
+import org.json.JSONObject
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
 import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
@@ -63,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusAdapter: StatusRowAdapter
     private lateinit var bridgeAdapter: StatusRowAdapter
     private lateinit var connectionAdapter: StatusRowAdapter
+    private lateinit var scanAdapter: StatusRowAdapter
+    private var selectedScan: JSONObject? = null
 
     private data class Probe(val ok: Boolean, val detail: String)
     private val probes = ConcurrentHashMap<String, Probe>()
@@ -93,7 +98,8 @@ class MainActivity : AppCompatActivity() {
             "security" to binding.panelSecurity,
             "controls" to binding.panelControls,
             "settings" to binding.panelSettings,
-            "scopes" to binding.panelScopes
+            "scopes" to binding.panelScopes,
+            "scans" to binding.panelScans
         )
     }
 
@@ -119,9 +125,14 @@ class MainActivity : AppCompatActivity() {
         statusAdapter = StatusRowAdapter(copy)
         bridgeAdapter = StatusRowAdapter(copy)
         connectionAdapter = StatusRowAdapter(copy)
+        scanAdapter = StatusRowAdapter(copy)
         setupList(binding.statusList, statusAdapter)
         setupList(binding.bridgeList, bridgeAdapter)
         setupList(binding.connectionList, connectionAdapter)
+        setupList(binding.scanList, scanAdapter)
+        binding.scanCopyButton.setOnClickListener { copySelectedScan() }
+        binding.scanClearButton.setOnClickListener { clearScans() }
+        ScanHistoryStore.ensureLoaded(applicationContext)
 
         binding.refreshButton.setOnClickListener { refreshStatus(); probeBridges() }
         binding.probeBridgesButton.setOnClickListener { probeBridges() }
@@ -169,6 +180,7 @@ class MainActivity : AppCompatActivity() {
             "systems" to R.string.panel_systems, "mesh" to R.string.panel_mesh,
             "connections" to R.string.panel_connections, "security" to R.string.panel_security,
             "controls" to R.string.panel_controls, "settings" to R.string.panel_settings,
+            "scans" to R.string.panel_scans,
             "scopes" to R.string.scopes_label
         )
         for ((key, _) in panels) {
@@ -231,7 +243,7 @@ class MainActivity : AppCompatActivity() {
             if (v is ViewGroup && v !is RecyclerView) for (i in 0 until v.childCount) walk(v.getChildAt(i))
         }
         walk(binding.root)
-        listOf(statusAdapter, bridgeAdapter, connectionAdapter).forEach { it.accent = accent }
+        listOf(statusAdapter, bridgeAdapter, connectionAdapter, scanAdapter).forEach { it.accent = accent }
     }
 
     // ---------------- Status binding (real state only) ----------------
@@ -311,6 +323,7 @@ class MainActivity : AppCompatActivity() {
             Led.INFO
         )
         statusAdapter.submit(rows)
+        refreshScans()
 
         binding.headerLed.backgroundTintList = ColorStateList.valueOf(
             ContextCompat.getColor(this, when {
@@ -638,6 +651,83 @@ class MainActivity : AppCompatActivity() {
         hideToken()
         super.onPause()
     }
+
+
+    private fun refreshScans() {
+        ScanHistoryStore.ensureLoaded(applicationContext)
+        val arr = ScanHistoryStore.latest(50)
+        val rows = mutableListOf<StatusRow>()
+        for (i in 0 until arr.length()) {
+            val s = arr.optJSONObject(i) ?: continue
+            val ts = s.optLong("ts")
+            val whenStr = if (ts > 0) DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(ts)) else "?"
+            val label = s.optString("label_type", "unknown")
+            val visible = s.optString("visible_text", s.optString("data_string")).take(60)
+            val src = s.optString("source", "?")
+            rows += StatusRow(
+                label = "$whenStr · $label · $src",
+                value = visible,
+                state = Led.INFO,
+                copyText = s.toString(2)
+            )
+        }
+        scanAdapter.submit(rows)
+        // Keep detail pane on selected or newest
+        val detail = selectedScan ?: arr.optJSONObject(0)
+        binding.scanDetailText.text = if (detail != null) formatScanDetail(detail) else getString(R.string.scans_empty)
+        // Tap a row → expand: StatusRowAdapter copy button already copies; also set selection via long-press value
+        // Simpler: if user hits Copy on a row it copies JSON; detail shows newest unless selectedScan set via copyText match
+    }
+
+    private fun formatScanDetail(s: JSONObject): String {
+        val sb = StringBuilder()
+        sb.append("label: ").append(s.optString("label_type", "unknown")).append('\n')
+        sb.append("aim: ").append(s.optString("aim_id", "unknown")).append('\n')
+        sb.append("source: ").append(s.optString("source", "unknown")).append('\n')
+        sb.append("mode: ").append(s.optString("decoded_mode", "unknown")).append('\n')
+        sb.append("len: ").append(s.optInt("length")).append(" chars / ").append(s.optInt("byte_length")).append(" bytes\n")
+        sb.append("charset: ").append(s.optString("charset")).append('\n')
+        sb.append("visible: ").append(s.optString("visible_text")).append('\n')
+        sb.append("base64: ").append(s.optString("base64").take(120)).append("…\n")
+        val segs = s.optJSONArray("decode_data")
+        if (segs != null) {
+            for (i in 0 until segs.length()) {
+                val seg = segs.optJSONObject(i) ?: continue
+                sb.append("--- decode_data[").append(i).append("] ").append(seg.optInt("byte_length")).append(" bytes ---\n")
+                sb.append(seg.optString("hex_dump")).append('\n')
+            }
+        }
+        val parsers = s.optJSONArray("parsers")
+        if (parsers != null) {
+            sb.append("--- parsers ---\n")
+            for (i in 0 until parsers.length()) {
+                sb.append(parsers.optJSONObject(i)?.toString(2) ?: "").append('\n')
+            }
+        }
+        s.optString("structure_note").takeIf { it.isNotEmpty() }?.let {
+            sb.append("note: ").append(it).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun copySelectedScan() {
+        val detail = selectedScan ?: ScanHistoryStore.latest(1).optJSONObject(0)
+        if (detail == null) {
+            Toast.makeText(this, "No scan to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cm = getSystemService(ClipboardManager::class.java)
+        cm.setPrimaryClip(ClipData.newPlainText("scan", detail.toString(2)))
+        Toast.makeText(this, "Scan JSON copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearScans() {
+        ScanHistoryStore.clear(applicationContext)
+        selectedScan = null
+        refreshScans()
+        Toast.makeText(this, "Scan history cleared", Toast.LENGTH_SHORT).show()
+    }
+
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)

@@ -20,7 +20,9 @@ import com.rjkyker.shizukuai.broker.airtable.AirtableSyncWorker
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.mcp.UpstreamMcpRelayClient
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import android.provider.Settings
 import com.rjkyker.shizukuai.broker.discovery.NsdAdvertiser
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.ui.MainActivity
@@ -69,6 +71,8 @@ class BrokerService : Service() {
                         runCatching { DhizukuGateway.reconnect(applicationContext) }
                     }
                 }
+                // Re-assert our accessibility service if it was disabled (Dhizuku/Shizuku settings write).
+                reassertAccessibility()
             } catch (e: Exception) {
                 Log.w(TAG, "watchdog: ${e.message}")
             } finally {
@@ -101,6 +105,31 @@ class BrokerService : Service() {
         ensureServer()
         registerBinders()
         return START_STICKY
+    }
+
+
+    /**
+     * If our accessibility component is missing from enabled_accessibility_services, put it back
+     * via Settings.Secure (works when we hold WRITE_SECURE_SETTINGS via Dhizuku/Shizuku). Soft-fail.
+     */
+    private fun reassertAccessibility() {
+        try {
+            if (AgentAccessibilityService.isEnabled()) return
+            val cr = applicationContext.contentResolver
+            val component = "${packageName}/.accessibility.AgentAccessibilityService"
+            val cur = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            if (cur.split(':').any { it.equals(component, ignoreCase = true) }) {
+                // Listed but service not bound yet — just ensure master switch is on
+                Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                return
+            }
+            val next = if (cur.isBlank()) component else "$cur:$component"
+            Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next)
+            Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            Log.i(TAG, "watchdog re-asserted accessibility service")
+        } catch (e: Exception) {
+            Log.w(TAG, "reassertAccessibility: ${e.message}")
+        }
     }
 
     private fun ensureServer() {

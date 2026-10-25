@@ -30,10 +30,10 @@ class DiscoveryManifestTest {
         bridges: Map<String, String> = SecurePrefs.BRIDGE_NAMES.associateWith { SecurePrefs.defaultBridgeUrl(it) }
     ) = DiscoveryManifest.Inputs(
         appId = "com.rjkyker.shizukuai.broker", appName = "Shizuku AI Broker",
-        versionName = "1.8.0-dev", versionCode = 10,
+        versionName = "1.8.1-dev", versionCode = 11,
         manufacturer = "Zebra Technologies", model = "TC22", androidRelease = "14", sdkInt = 34,
         localHost = "127.0.0.1", port = 17999, serverRunning = true,
-        serverName = "shizuku-ai-action-broker", serverVersion = "1.8.0-dev",
+        serverName = "shizuku-ai-action-broker", serverVersion = "1.8.1-dev",
         protocolVersions = listOf("2024-11-05", "2025-03-26", "2025-06-18"),
         defaultProtocolVersion = "2024-11-05",
         tailscaleAddresses = listOf("100.95.242.123"),
@@ -48,7 +48,7 @@ class DiscoveryManifestTest {
         val m = DiscoveryManifest.build(inputs())
         assertEquals(DiscoveryManifest.SCHEMA, m.getString("schema"))
         assertEquals("com.rjkyker.shizukuai.broker", m.getJSONObject("app").getString("id"))
-        assertEquals("1.8.0-dev", m.getJSONObject("app").getString("version"))
+        assertEquals("1.8.1-dev", m.getJSONObject("app").getString("version"))
         assertEquals("TC22", m.getJSONObject("device").getString("model"))
         assertTrue(m.getJSONObject("auth").getBoolean("required"))
         assertEquals("bearer", m.getJSONObject("auth").getString("scheme"))
@@ -69,7 +69,7 @@ class DiscoveryManifestTest {
         assertEquals("http://127.0.0.1:17999/mcp", byId.getValue("loopback").getString("mcp_http"))
         assertTrue(byId.containsKey("tailscale_100.95.242.123"))
         val host = "https://presocial-endocrinopathic-fumiko.ngrok-free.dev"
-        for (b in listOf("android", "spark", "ether", "war", "magic")) {
+        for (b in listOf("android", "spark", "ether", "war", "magic", "muse")) {
             val c = byId.getValue("mesh_$b")
             assertEquals("$host/$b/mcp", c.getString("mcp_http"))
             assertEquals("$host/$b/health", c.getString("health"))
@@ -142,7 +142,7 @@ class DiscoveryManifestTest {
     @Test
     fun builtInDefaultsArePrefilledAndCarryNoCredential() {
         assertEquals("https://presocial-endocrinopathic-fumiko.ngrok-free.dev/android/mcp", SecurePrefs.DEFAULT_UPSTREAM_MCP_URL)
-        assertEquals(listOf("android", "spark", "ether", "war", "magic"), SecurePrefs.BRIDGE_NAMES)
+        assertEquals(listOf("android", "spark", "ether", "war", "magic", "muse"), SecurePrefs.BRIDGE_NAMES)
         for (b in SecurePrefs.BRIDGE_NAMES) {
             val u = SecurePrefs.defaultBridgeUrl(b)
             assertEquals("${SecurePrefs.DEFAULT_MESH_BASE_URL}/$b/mcp", u)

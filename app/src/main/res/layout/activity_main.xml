@@ -442,7 +442,70 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelScans"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleScans"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_scans" />
+
+                    <TextView
+                        android:id="@+id/scanDetailText"
+                        style="@style/CC.Mono"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:maxLines="24"
+                        android:scrollbars="vertical"
+                        android:textIsSelectable="true"
+                        android:text="@string/scans_empty" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/scanList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:nestedScrollingEnabled="false"
+                        android:overScrollMode="never" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/scanCopyButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/scan_copy" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/scanClearButton"
+                            style="@style/CC.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/scan_clear" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+<com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelCustomize"
                 style="@style/CC.Panel"
                 android:layout_width="match_parent"

@@ -22,11 +22,11 @@ object SecurePrefs {
     private const val KEY_BRIDGE_URL_PREFIX = "bridge_url_"
     private const val KEY_BRIDGE_TOKEN_PREFIX = "bridge_token_"
     private const val KEY_MESH_BASE_URL = "mesh_base_url"
-    val BRIDGE_NAMES = listOf("android", "spark", "ether", "war", "magic")
+    val BRIDGE_NAMES = listOf("android", "spark", "ether", "war", "magic", "muse")
 
     /**
      * Built-in, non-secret public mesh host (RJ's permanent ngrok domain). Every bridge is a path on
-     * it: /android/mcp /spark/mcp /ether/mcp /war/mcp /magic/mcp. These are connection URLs only —
+     * it: /android/mcp /spark/mcp /ether/mcp /war/mcp /magic/mcp /muse/mcp. These are connection URLs only —
      * NO token or key is ever baked in; bridge/upstream tokens stay blank until set in the app.
      * All defaults are editable/overridable in the UI; saving a blank value restores the default.
      */

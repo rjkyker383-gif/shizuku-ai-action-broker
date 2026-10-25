@@ -13,6 +13,7 @@ import com.rjkyker.shizukuai.broker.action.RiskLevel
 import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
+import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
 import com.rjkyker.shizukuai.broker.datawedge.WedgeSyncManager
 import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
@@ -47,6 +48,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_GESTURE -> gesture(args)
                 TOOL_DHIZUKU -> dhizuku(args, confirmed)
                 TOOL_DATAWEDGE -> datawedge(args)
+                TOOL_SCAN_HISTORY -> scanHistory(args)
                 TOOL_WEDGE_SYNC -> WedgeSyncManager.control(
                     context,
                     args.optString("op", "status"),
@@ -267,6 +269,13 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         return router.route(body).put("risk", risk.name).put("mapped_op", mapped)
     }
 
+
+    private fun scanHistory(args: JSONObject): JSONObject {
+        val limit = args.optInt("limit", 50).coerceIn(1, 200)
+        ScanHistoryStore.ensureLoaded(context)
+        return ScanHistoryStore.snapshot(limit)
+    }
+
     // ---------------- datawedge_query ----------------
 
     private fun datawedge(args: JSONObject): JSONObject {
@@ -435,6 +444,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_GESTURE = "perform_gesture"
         const val TOOL_DHIZUKU = "manage_dhizuku_policy"
         const val TOOL_DATAWEDGE = "datawedge_query"
+        const val TOOL_SCAN_HISTORY = "scan_history"
         const val TOOL_WEDGE_SYNC = "wedge_sync_control"
         const val TOOL_UPSTREAM = "upstream_mcp_relay"
         const val TOOL_STATUS = "get_system_status"
@@ -449,7 +459,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
 
         val TOOL_NAMES = setOf(
             TOOL_EXEC_SHELL, TOOL_DUMP_UI, TOOL_GESTURE, TOOL_DHIZUKU,
-            TOOL_DATAWEDGE, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
+            TOOL_DATAWEDGE, TOOL_SCAN_HISTORY, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
             TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY
         )
@@ -527,6 +537,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                         )
                         .put("confirm", prop("boolean", "required for HIGH ops")),
                     listOf("op")
+                )
+            )
+            .put(
+                tool(
+                    TOOL_SCAN_HISTORY,
+                    "Last DataWedge scans with full decode detail (symbology, AIM, hex, parsers). LOW-risk, auth required. Newest first.",
+                    JSONObject()
+                        .put("limit", prop("integer", "Max scans to return (1-200, default 50)")),
+                    emptyList()
                 )
             )
             .put(

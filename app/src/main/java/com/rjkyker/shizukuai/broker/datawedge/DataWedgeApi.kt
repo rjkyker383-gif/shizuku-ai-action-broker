@@ -154,20 +154,64 @@ object DataWedgeApi {
                 putString("intent_category", "android.intent.category.DEFAULT")
                 // 0=start activity, 1=start service, 2=broadcast
                 putString("intent_delivery", "2")
+                // Keep raw bytes + control characters in the intent extras
+                putString("intent_encode_data", "true")      // include decode_data byte arrays
+                putString("intent_use_data_format", "false")  // do not strip / reformat
             }
             val intentConfig = Bundle().apply {
                 putString("PLUGIN_NAME", "INTENT")
                 putString("RESET_CONFIG", "true")
                 putBundle("PARAM_LIST", intentProps)
             }
+            // Free (no paid license) symbologies commonly available on TC22 SE4710/SE55.
+            // Do NOT enable paid decoder licenses / bypass anything.
             val barcodeProps = Bundle().apply {
                 putString("scanner_selection", "auto")
                 putString("scanner_input_enabled", "true")
+                putString("decoder_code128", "true")
+                putString("decoder_code39", "true")
+                putString("decoder_code93", "true")
+                putString("decoder_ean13", "true")
+                putString("decoder_ean8", "true")
+                putString("decoder_upca", "true")
+                putString("decoder_upce0", "true")
+                putString("decoder_upce1", "true")
+                putString("decoder_i2of5", "true")
+                putString("decoder_d2of5", "true")
+                putString("decoder_codabar", "true")
+                putString("decoder_pdf417", "true")
+                putString("decoder_qrcode", "true")
+                putString("decoder_datamatrix", "true")
+                putString("decoder_aztec", "true")
+                putString("decoder_gs1_databar", "true")
+                putString("decoder_gs1_databar_lim", "true")
+                putString("decoder_gs1_databar_exp", "true")
+                putString("decoder_composite_ab", "true")
+                putString("decoder_composite_c", "true")
+                putString("decoder_microqr", "true")
+                putString("decoder_micropdf", "true")
+                putString("decoder_maxi_code", "true")
+                putString("decoder_trioptic39", "true")
+                putString("decoder_msi", "true")
+                putString("decoder_usps_4state", "true")
+                putString("decoder_australian_postal", "true")
+                // Keep AIM code identifier when DataWedge supports it (free)
+                putString("code_id_type", "2") // AIM (1=None, 2=AIM, 3=Symbol)
+                putString("aim_mode", "on")
             }
             val barcodeConfig = Bundle().apply {
                 putString("PLUGIN_NAME", "BARCODE")
                 putString("RESET_CONFIG", "true")
                 putBundle("PARAM_LIST", barcodeProps)
+            }
+            // Keystroke output: keep control chars (do not strip)
+            val keystrokeProps = Bundle().apply {
+                putString("keystroke_output_enabled", "false") // intent is primary
+            }
+            val keystrokeConfig = Bundle().apply {
+                putString("PLUGIN_NAME", "KEYSTROKE")
+                putString("RESET_CONFIG", "false")
+                putBundle("PARAM_LIST", keystrokeProps)
             }
             val appConfig = Bundle().apply {
                 putString("PACKAGE_NAME", packageName)
@@ -178,7 +222,7 @@ object DataWedgeApi {
                 putString("PROFILE_ENABLED", "true")
                 putString("CONFIG_MODE", "CREATE_IF_NOT_EXIST")
                 putParcelableArray("APP_LIST", arrayOf(appConfig))
-                putParcelableArray("PLUGIN_CONFIG", arrayOf(barcodeConfig, intentConfig))
+                putParcelableArray("PLUGIN_CONFIG", arrayOf(barcodeConfig, intentConfig, keystrokeConfig))
             }
             send(context, EXTRA_SET_CONFIG, profileConfig)
                 .put("profile", profileName)
