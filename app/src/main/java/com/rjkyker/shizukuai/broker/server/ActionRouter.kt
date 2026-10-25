@@ -17,6 +17,7 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultStore
 import com.rjkyker.shizukuai.broker.barcode.BarcodeGhostEngine
+import com.rjkyker.shizukuai.broker.barcode.BarcodeAiPlanner
 import com.rjkyker.shizukuai.broker.barcode.BarcodeLabelGenerator
 import com.rjkyker.shizukuai.broker.barcode.BarcodeWorkspaceStore
 import com.rjkyker.shizukuai.broker.cli.AdminCliService
@@ -80,6 +81,7 @@ class ActionRouter(private val context: Context) {
                 "barcode_inspect" -> handleBarcodeInspect(body)
                 "barcode_transform_preview" -> handleBarcodeTransformPreview(body)
                 "barcode_command_preview" -> handleBarcodeCommandPreview(body)
+                "barcode_plan_instruction" -> handleBarcodePlanInstruction(body)
                 "barcode_catalog_lookup" -> BarcodeWorkspaceStore.lookup(
                     context, body.optString("barcode", body.optString("value", ""))
                 )
@@ -115,6 +117,14 @@ class ActionRouter(private val context: Context) {
             argument = body.optString("argument", ""),
             replacement = body.optString("replacement", "")
         ).toJson()
+    }
+
+    private fun handleBarcodePlanInstruction(body: JSONObject): JSONObject {
+        val last = DataWedgeResultReceiver.lastScanJson.get()
+        val value = if (body.has("value")) body.optString("value", "") else last?.optString("data_string", "").orEmpty()
+        if (value.isEmpty()) return err("barcode_plan_instruction requires value or a previous scan")
+        val instruction = body.optString("instruction", "")
+        return BarcodeAiPlanner.plan(value, instruction)
     }
 
     private fun handleBarcodeCommandPreview(body: JSONObject): JSONObject {
