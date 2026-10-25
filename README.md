@@ -22,7 +22,7 @@ Localhost action broker (127.0.0.1:17999) with:
   Once approved, a small set of reversible device-owner ops runs through Dhizuku's binder-wrapped
   `DevicePolicyManager` (see `docs/DHIZUKU.md`)
 
-See also: `docs/DHIZUKU.md`, `docs/DATAWEDGE_RESULTS.md`, `docs/ALLOWLIST.md`, `docs/DEVICE_SETUP.md`, `docs/ARCHITECTURE.md`,
+See also: `docs/DHIZUKU.md`, `docs/DATAWEDGE_RESULTS.md`, `docs/BARCODE_GHOST_ENGINE.md`, `docs/ALLOWLIST.md`, `docs/DEVICE_SETUP.md`, `docs/ARCHITECTURE.md`,
 `schemas/action.schema.json`, `examples/action.example.json`.
 
 ## Build (host Linux / this box)
