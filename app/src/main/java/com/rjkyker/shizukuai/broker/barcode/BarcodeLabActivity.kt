@@ -18,6 +18,7 @@ import org.json.JSONObject
 /** On-device first-pass UI for inspection, transformation previews, local prices, and label creation. */
 class BarcodeLabActivity : AppCompatActivity() {
     private lateinit var valueInput: EditText
+    private lateinit var instructionInput: EditText
     private lateinit var operationInput: EditText
     private lateinit var argumentInput: EditText
     private lateinit var replacementInput: EditText
@@ -54,6 +55,7 @@ class BarcodeLabActivity : AppCompatActivity() {
         }, matchWrap())
 
         valueInput = field(content, "Scanned or replacement data", initial)
+        instructionInput = field(content, "Natural-language transformation instruction", "Add RJ- to the beginning")
         symbologyInput = field(content, "Symbology (optional, e.g. UPC-A)", last?.optString("label_type", "").orEmpty())
         operationInput = field(content, "Transform operation", "prefix")
         argumentInput = field(content, "Argument / search text", "RJ-")
@@ -72,6 +74,17 @@ class BarcodeLabActivity : AppCompatActivity() {
                 symbologyInput.setText(scan.optString("label_type", ""))
                 showMessage("Latest scan loaded. Original value preserved in scan history.")
             }
+        }
+        addButton(content, "INTERPRET NATURAL-LANGUAGE INSTRUCTION") {
+            val plan = BarcodeAiPlanner.plan(currentValue(), instructionInput.text.toString())
+            val preview = plan.optJSONObject("preview")
+            if (plan.optBoolean("planned") && preview != null && preview.optBoolean("ok")) {
+                latestTransform = BarcodeTransformResult(
+                    true, currentValue(), preview.optString("operation", ""),
+                    preview.optString("output", "")
+                )
+            }
+            showMessage(plan.toString(2))
         }
         addButton(content, "INSPECT CURRENT DATA") {
             val v = currentValue()
