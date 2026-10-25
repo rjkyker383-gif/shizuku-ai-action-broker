@@ -40,6 +40,7 @@ object ActionAllowList {
         "barcode_inspect" to RiskLevel.LOW,
         "barcode_transform_preview" to RiskLevel.LOW,
         "barcode_command_preview" to RiskLevel.LOW,
+        "barcode_plan_instruction" to RiskLevel.LOW,
         "barcode_catalog_lookup" to RiskLevel.LOW,
         "barcode_catalog_update" to RiskLevel.HIGH,
         "barcode_label_generate" to RiskLevel.MEDIUM,
