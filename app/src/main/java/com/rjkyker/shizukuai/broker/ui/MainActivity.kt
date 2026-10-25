@@ -16,6 +16,9 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.service.BrokerService
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
+import com.rjkyker.shizukuai.broker.barcode.BarcodeCommandRuntime
+import com.rjkyker.shizukuai.broker.barcode.BarcodeExperienceActivity
+import com.rjkyker.shizukuai.broker.barcode.CustomBarcodeCommand
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import rikka.shizuku.Shizuku
 
@@ -23,6 +26,15 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var admin: DelegatedAdminActionHandler
+
+    private val barcodeCommandListener: (CustomBarcodeCommand) -> Unit = { command ->
+        val launch = Intent(this, BarcodeExperienceActivity::class.java).apply {
+            putExtra(BarcodeExperienceActivity.EXTRA_TYPE, command.type)
+            putExtra(BarcodeExperienceActivity.EXTRA_ID, command.id)
+            putExtra(BarcodeExperienceActivity.EXTRA_VERSION, command.version)
+        }
+        startActivity(launch)
+    }
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         runOnUiThread { refreshStatus() }
@@ -104,6 +116,17 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
         refreshStatus()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        BarcodeCommandRuntime.attach(barcodeCommandListener)
+        BarcodeCommandRuntime.consumePending(applicationContext)?.let(barcodeCommandListener)
+    }
+
+    override fun onStop() {
+        BarcodeCommandRuntime.detach(barcodeCommandListener)
+        super.onStop()
     }
 
     override fun onResume() {
