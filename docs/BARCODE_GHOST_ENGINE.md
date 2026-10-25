@@ -7,6 +7,20 @@ BGX command parsing, local catalog-price records, and PNG label generation.
 All endpoints below are served by the existing broker on 127.0.0.1:17999. Keep any
 reverse proxy or port-forward restricted to trusted devices.
 
+## Natural-language transformation planner
+
+The on-device screen and broker expose a safe instruction planner. For example:
+
+    curl -s -X POST http://127.0.0.1:17999/action \
+      -H 'Content-Type: application/json' \
+      -d '{"op":"barcode_plan_instruction","value":"12345","instruction":"Add RJ- to the beginning"}'
+
+The default planner is an offline, deterministic fallback for common simple instructions.
+A pluggable BarcodeAiProvider interface is present for a model-backed provider, but no
+remote AI provider or credentials are configured in this branch. Unknown instructions
+are rejected instead of guessed. A proposal is preview-only and must be explicitly
+accepted by the user or calling agent before becoming a working draft.
+
 ## Inspect a barcode or the latest scan
 
     curl -s -X POST http://127.0.0.1:17999/action \
