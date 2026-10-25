@@ -211,7 +211,7 @@ class BarcodeLabActivity : AppCompatActivity() {
             setHintTextColor(Color.GRAY)
             setTextColor(Color.WHITE)
             textSize = 14f
-            singleLine = false
+            setSingleLine(false)
             maxLines = 3
             setPadding(dp(10), dp(4), dp(10), dp(4))
         }
