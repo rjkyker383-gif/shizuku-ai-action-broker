@@ -11,8 +11,8 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.6.0-dev"
+        versionCode = 9
+        versionName = "1.7.0-dev"
     }
 
     buildTypes {
@@ -58,5 +58,7 @@ dependencies {
     }
     // Needed for Dhizuku's documented binder-wrapped DevicePolicyManager pattern (mService field).
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+    // WorkManager: background Airtable telemetry flush (AirtableSyncWorker)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     testImplementation("junit:junit:4.13.2")
 }

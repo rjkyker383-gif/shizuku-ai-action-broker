@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.rjkyker.shizukuai.broker.R
+import com.rjkyker.shizukuai.broker.airtable.AirtableSyncWorker
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.mcp.UpstreamMcpRelayClient
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
@@ -81,6 +82,8 @@ class BrokerService : Service() {
         super.onCreate()
         SecurePrefs.ensureMcpToken(applicationContext)
         registerBinders()
+        // Periodic Airtable telemetry flush (no-ops until an API key is set in the app).
+        runCatching { AirtableSyncWorker.schedulePeriodic(applicationContext) }
         handler.postDelayed(watchdog, WATCHDOG_MS)
     }
 

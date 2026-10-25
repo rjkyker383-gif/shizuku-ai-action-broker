@@ -29,4 +29,11 @@
     <string name="upstream_url_hint">https://…tunnel or http://100.x.x.x:8486/mcp — not 192.168 for primary</string>
     <string name="save_upstream">Save upstream URL</string>
     <string name="upstream_lan_fallback_label">LAN fallback (optional, home Wi-Fi only)</string>
+    <string name="airtable_key_label">Airtable API key (stored encrypted)</string>
+    <string name="airtable_key_hint">pat… / key…  (read at runtime, never hardcoded)</string>
+    <string name="save_airtable">Save Airtable key</string>
+    <string name="airtable_key_set">Airtable key: set (hidden)</string>
+    <string name="bridge_urls_label">Bridge URLs (magic/war/ether)</string>
+    <string name="bridge_urls_hint">magic=https://…,war=https://…,ether=https://…</string>
+    <string name="save_bridges">Save bridge URLs</string>
 </resources>

@@ -191,6 +191,54 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="@string/battery_exemption"
+        app:layout_constraintBottom_toTopOf="@id/airtableKeyInput"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <EditText
+        android:id="@+id/airtableKeyInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/airtable_key_hint"
+        android:inputType="textPassword"
+        android:fontFamily="monospace"
+        android:textSize="11sp"
+        android:importantForAutofill="no"
+        app:layout_constraintBottom_toTopOf="@id/saveAirtableButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/saveAirtableButton"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/save_airtable"
+        app:layout_constraintBottom_toTopOf="@id/bridgeUrlsInput"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <EditText
+        android:id="@+id/bridgeUrlsInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/bridge_urls_hint"
+        android:inputType="textUri"
+        android:fontFamily="monospace"
+        android:textSize="11sp"
+        android:importantForAutofill="no"
+        app:layout_constraintBottom_toTopOf="@id/saveBridgesButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/saveBridgesButton"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/save_bridges"
         app:layout_constraintBottom_toTopOf="@id/hintText"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />

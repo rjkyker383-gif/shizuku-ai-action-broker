@@ -61,7 +61,13 @@
         "OPEN_APP",
         "OPEN_SETTINGS",
         "GET_BATTERY_INFO",
-        "GET_DISPLAY_INFO"
+        "GET_DISPLAY_INFO",
+        "bridge_relay",
+        "airtable_log",
+        "wifi_presence_scan",
+        "zebra_wifi_config",
+        "zebra_datawedge_profile",
+        "zebra_scanner_control"
       ]
     },
     "reason": {

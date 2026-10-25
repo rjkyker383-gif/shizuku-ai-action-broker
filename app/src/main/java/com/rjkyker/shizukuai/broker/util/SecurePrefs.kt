@@ -18,6 +18,10 @@ object SecurePrefs {
     private const val KEY_UPSTREAM_URL = "upstream_mcp_url"
     private const val KEY_UPSTREAM_TOKEN = "upstream_mcp_token"
     private const val KEY_UPSTREAM_LAN_FALLBACK = "upstream_mcp_lan_fallback_url"
+    private const val KEY_AIRTABLE_API_KEY = "airtable_api_key"
+    private const val KEY_BRIDGE_URL_PREFIX = "bridge_url_"
+    private const val KEY_BRIDGE_TOKEN_PREFIX = "bridge_token_"
+    val BRIDGE_NAMES = listOf("magic", "war", "ether")
 
     /**
      * Built-in upstream default. Intentionally empty: no any-network (ngrok / Cloudflare tunnel /
@@ -115,6 +119,36 @@ object SecurePrefs {
 
     fun setUpstreamMcpToken(context: Context, value: String) {
         get(context).edit().putString(KEY_UPSTREAM_TOKEN, value.trim()).apply()
+    }
+
+    // ---- Airtable ----
+
+    /** Airtable personal access token / API key. Empty = not configured (worker no-ops). Never logged. */
+    fun getAirtableApiKey(context: Context): String =
+        get(context).getString(KEY_AIRTABLE_API_KEY, "").orEmpty().trim()
+
+    fun setAirtableApiKey(context: Context, value: String) {
+        get(context).edit().putString(KEY_AIRTABLE_API_KEY, value.trim()).apply()
+    }
+
+    // ---- Bridge mesh (magic / war / ether) ----
+
+    private fun normalizeBridge(name: String): String = name.trim().lowercase()
+
+    /** Per-bridge MCP URL (magic|war|ether). Empty until set; nothing is hardcoded. */
+    fun getBridgeUrl(context: Context, name: String): String =
+        get(context).getString(KEY_BRIDGE_URL_PREFIX + normalizeBridge(name), "").orEmpty().trim()
+
+    fun setBridgeUrl(context: Context, name: String, value: String) {
+        get(context).edit().putString(KEY_BRIDGE_URL_PREFIX + normalizeBridge(name), validateUrl(value)).apply()
+    }
+
+    /** Optional per-bridge bearer token (falls back to the upstream token when blank). Never logged. */
+    fun getBridgeToken(context: Context, name: String): String =
+        get(context).getString(KEY_BRIDGE_TOKEN_PREFIX + normalizeBridge(name), "").orEmpty().trim()
+
+    fun setBridgeToken(context: Context, name: String, value: String) {
+        get(context).edit().putString(KEY_BRIDGE_TOKEN_PREFIX + normalizeBridge(name), value.trim()).apply()
     }
 
     private fun tryCreateEncrypted(context: Context): SharedPreferences? {

@@ -90,3 +90,23 @@ class ActionRequestRiskTest {
         assertTrue(ActionRequest("NOT_A_REAL_ACTION", "r", "s").riskLevel == RiskLevel.HIGH)
     }
 }
+
+class MeshSensingZebraToolTest {
+    @Test
+    fun newToolsAllowedWithExpectedRisk() {
+        assertTrue(ActionAllowList.riskLevelFor("bridge_relay") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("airtable_log") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("wifi_presence_scan") == RiskLevel.LOW)
+        assertTrue(ActionAllowList.riskLevelFor("zebra_wifi_config") == RiskLevel.HIGH)
+        assertTrue(ActionAllowList.riskLevelFor("zebra_datawedge_profile") == RiskLevel.MEDIUM)
+        assertTrue(ActionAllowList.riskLevelFor("zebra_scanner_control") == RiskLevel.MEDIUM)
+    }
+
+    @Test
+    fun newToolsAreAllowListed() {
+        listOf(
+            "bridge_relay", "airtable_log", "wifi_presence_scan",
+            "zebra_wifi_config", "zebra_datawedge_profile", "zebra_scanner_control"
+        ).forEach { assertTrue("$it should be allowed", ActionAllowList.isAllowed(it)) }
+    }
+}

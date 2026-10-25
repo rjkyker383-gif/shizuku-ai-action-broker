@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased / 1.7.0-dev
+- **BridgeMeshRelay** + MCP tool `bridge_relay{bridge,method,params}`: relay JSON-RPC to
+  `magic`/`war`/`ether`/`upstream`. Per-bridge URLs in SecurePrefs (nothing hardcoded; no 192.168
+  default); each bridge is health-checked before relaying and unreachable bridges return `ok:false`.
+- **AirtableSyncWorker** (WorkManager, 30-min periodic flush) + MCP tool `airtable_log{base,table,fields}`:
+  owner bases `appQkHjQwQuyzVT99` / `appQDYTaD6gi64g7M` only. API key read from SecurePrefs at runtime,
+  never hardcoded; no key => worker no-ops, logs "Airtable key not set", records stay queued on disk.
+- **WifiPresenceEngine** + MCP tool `wifi_presence_scan{duration_ms}`: honest RSSI/link-variance
+  presence & motion score (sliding window + small FFT) using public APIs + `dumpsys wifi`.
+  Explicitly near-device only — CANNOT see through walls or identify people (Android exposes no CSI).
+- **ZebraCapabilityLayer** + MCP tools `zebra_wifi_config`, `zebra_datawedge_profile`,
+  `zebra_scanner_control`: NO-LICENSE Zebra control via DataWedge / WifiManager / DPM / Shizuku shell.
+  No license-check bypass, no licensing-daemon reflection, no forged keys; paid-license features are
+  listed and intentionally omitted at the top of the file.
+- Settings: added Airtable API key field + per-bridge URL list to MainActivity (encrypted SecurePrefs).
+- Manifest: ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, ACCESS_NETWORK_STATE, CHANGE_NETWORK_STATE,
+  ACCESS_FINE_LOCATION. Foreground service confirmed START_STICKY + specialUse FGS type +
+  BOOT_COMPLETED/LOCKED_BOOT_COMPLETED/MY_PACKAGE_REPLACED receiver + binder/server watchdog.
+- `get_system_status` now reports bridge configuration (host only) and Airtable key_set.
+- Version 1.7.0-dev (versionCode 9). MCP serverInfo version bumped. Contract verifier + unit tests
+  updated for the 6 new tools (kept in sync with schemas/action.schema.json).
+
 ## Unreleased / 1.6.0-dev
 - Permanent MCP JSON-RPC on `POST /mcp` + minimal WebSocket at `GET /ws` (same ServerSocket as `/health`/`/action`).
 - Bearer auth (`Authorization` / `X-Broker-Token`); token in SecurePrefs; `/health` stays open with `mcp`/`auth_required` flags.

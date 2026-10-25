@@ -97,6 +97,8 @@ class MainActivity : AppCompatActivity() {
             true
         }
         binding.batteryButton.setOnClickListener { requestBatteryExemption() }
+        binding.saveAirtableButton.setOnClickListener { saveAirtableKey() }
+        binding.saveBridgesButton.setOnClickListener { saveBridgeUrls() }
 
         refreshStatus()
         // On start: init Dhizuku and, if not yet granted, request permission once per process so the
@@ -165,6 +167,49 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun saveAirtableKey() {
+        val raw = binding.airtableKeyInput.text?.toString().orEmpty().trim()
+        SecurePrefs.setAirtableApiKey(applicationContext, raw)
+        binding.airtableKeyInput.setText("")
+        Toast.makeText(
+            this,
+            if (raw.isEmpty()) "Airtable key cleared" else "Airtable key saved (encrypted)",
+            Toast.LENGTH_SHORT
+        ).show()
+        refreshStatus()
+    }
+
+    private fun saveBridgeUrls() {
+        // Format: magic=https://…,war=https://…,ether=https://…  (omit any you don't want to change)
+        val raw = binding.bridgeUrlsInput.text?.toString().orEmpty().trim()
+        if (raw.isEmpty()) {
+            Toast.makeText(this, "Enter e.g. magic=https://host/mcp,war=…", Toast.LENGTH_LONG).show()
+            return
+        }
+        var saved = 0
+        val errors = StringBuilder()
+        raw.split(',').map { it.trim() }.filter { it.contains('=') }.forEach { pair ->
+            val name = pair.substringBefore('=').trim().lowercase()
+            val url = pair.substringAfter('=').trim()
+            if (name in SecurePrefs.BRIDGE_NAMES) {
+                try {
+                    SecurePrefs.setBridgeUrl(applicationContext, name, url)
+                    saved++
+                } catch (e: Exception) {
+                    errors.append("$name: ${e.message}; ")
+                }
+            } else {
+                errors.append("unknown bridge '$name'; ")
+            }
+        }
+        Toast.makeText(
+            this,
+            "Saved $saved bridge URL(s)${if (errors.isNotEmpty()) " — $errors" else ""}",
+            Toast.LENGTH_LONG
+        ).show()
+        refreshStatus()
     }
 
     private fun requestBatteryExemption() {
@@ -319,6 +364,18 @@ class MainActivity : AppCompatActivity() {
         }
         if (!binding.upstreamUrlInput.hasFocus()) {
             binding.upstreamUrlInput.setText(SecurePrefs.getUpstreamMcpUrl(applicationContext))
+        }
+        if (!binding.airtableKeyInput.hasFocus()) {
+            val keySet = SecurePrefs.getAirtableApiKey(applicationContext).isNotBlank()
+            binding.airtableKeyInput.hint =
+                if (keySet) getString(R.string.airtable_key_set) else getString(R.string.airtable_key_hint)
+        }
+        if (!binding.bridgeUrlsInput.hasFocus()) {
+            val configured = SecurePrefs.BRIDGE_NAMES.mapNotNull { n ->
+                val u = SecurePrefs.getBridgeUrl(applicationContext, n)
+                if (u.isNotBlank()) "$n=$u" else null
+            }
+            if (configured.isNotEmpty()) binding.bridgeUrlsInput.setText(configured.joinToString(","))
         }
     }
 

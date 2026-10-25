@@ -138,7 +138,7 @@ class UpstreamMcpRelayClient(private val context: Context) {
                     .put("capabilities", JSONObject())
                     .put(
                         "clientInfo",
-                        JSONObject().put("name", "shizuku-ai-action-broker").put("version", "1.6.0-dev")
+                        JSONObject().put("name", "shizuku-ai-action-broker").put("version", "1.7.0-dev")
                     )
             )
         val (headers, body) = postWithHeaders(baseUrl, init.toString(), timeoutMs)
