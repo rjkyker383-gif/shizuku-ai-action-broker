@@ -15,6 +15,7 @@ class ActionAllowListTest {
             "datawedge_status", "datawedge_version", "datawedge_profiles",
             "datawedge_active_profile", "datawedge_soft_scan", "datawedge_switch_profile",
             "barcode_inspect", "barcode_transform_preview", "barcode_command_preview",
+            "barcode_plan_instruction",
             "barcode_catalog_lookup", "barcode_catalog_update", "barcode_label_generate"
         ).forEach { op ->
             assertTrue("$op should be allowed", ActionAllowList.isAllowed(op))
