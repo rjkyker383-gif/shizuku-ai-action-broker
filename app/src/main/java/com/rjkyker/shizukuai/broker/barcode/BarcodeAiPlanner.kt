@@ -50,13 +50,17 @@ object BarcodeAiPlanner {
         }
 
         val activeProvider = provider
-        val proposal = try {
-            activeProvider?.proposeTransformation(input, instruction)
-        } catch (e: Exception) {
-            return JSONObject().put("ok", false)
-                .put("error", "configured provider failed: " + (e.message ?: "unknown error"))
-                .put("provider", activeProvider?.providerName ?: "unknown")
-        } ?: localPlan(instruction)
+        val proposal = if (activeProvider == null) {
+            localPlan(instruction)
+        } else {
+            try {
+                activeProvider.proposeTransformation(input, instruction)
+            } catch (e: Exception) {
+                return JSONObject().put("ok", false)
+                    .put("error", "configured provider failed: " + (e.message ?: "unknown error"))
+                    .put("provider", activeProvider.providerName)
+            }
+        }
 
         if (proposal == null) {
             return JSONObject().put("ok", false)
