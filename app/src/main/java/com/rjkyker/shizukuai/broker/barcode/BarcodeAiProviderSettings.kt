@@ -97,12 +97,29 @@ private class OpenAiCompatibleBarcodeAiProvider(
             connection.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             if (status !in 200..299) throw IllegalStateException("AI provider returned HTTP " + status)
-            val response = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            if (response.length > 1_000_000) throw IllegalStateException("AI provider response is too large")
+            val response = connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val result = StringBuilder()
+                val buffer = CharArray(8192)
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count < 0) break
+                    if (result.length + count > 1_000_000) {
+                        throw IllegalStateException("AI provider response is too large")
+                    }
+                    result.append(buffer, 0, count)
+                }
+                result.toString()
+            }
             val root = JSONObject(response)
-            val content = root.optJSONArray("choices")?.optJSONObject(0)
+            var content = root.optJSONArray("choices")?.optJSONObject(0)
                 ?.optJSONObject("message")?.optString("content", "").orEmpty().trim()
             if (content.isBlank()) throw IllegalStateException("AI provider returned no message content")
+            if (content.firstOrNull() == 96.toChar()) {
+                val newline = content.indexOf('\\n')
+                if (newline >= 0) content = content.substring(newline + 1)
+                content = content.trimEnd()
+                while (content.isNotEmpty() && content.last() == 96.toChar()) content = content.dropLast(1).trimEnd()
+            }
             val proposal = JSONObject(content)
             val operation = proposal.optString("operation", "")
             if (operation == "unsupported" || operation.isBlank()) return null
