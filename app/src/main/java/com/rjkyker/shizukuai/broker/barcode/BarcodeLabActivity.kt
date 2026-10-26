@@ -258,6 +258,7 @@ class BarcodeLabActivity : AppCompatActivity() {
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(4))
+            setBackgroundColor(Color.rgb(11, 14, 26))
         }
         fun input(hintText: String, initial: String, password: Boolean = false): EditText {
             val edit = EditText(this).apply {
@@ -306,7 +307,6 @@ class BarcodeLabActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun currentValue(): String = valueInput.text.toString()
     private fun currentValue(): String = valueInput.text.toString()
 
     private fun field(parent: LinearLayout, hintText: String, initial: String): EditText {
