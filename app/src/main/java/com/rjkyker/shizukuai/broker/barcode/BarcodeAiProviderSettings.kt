@@ -115,7 +115,7 @@ private class OpenAiCompatibleBarcodeAiProvider(
                 ?.optJSONObject("message")?.optString("content", "").orEmpty().trim()
             if (content.isBlank()) throw IllegalStateException("AI provider returned no message content")
             if (content.firstOrNull() == 96.toChar()) {
-                val newline = content.indexOf('\\n')
+                val newline = content.indexOf('\n')
                 if (newline >= 0) content = content.substring(newline + 1)
                 content = content.trimEnd()
                 while (content.isNotEmpty() && content.last() == 96.toChar()) content = content.dropLast(1).trimEnd()
