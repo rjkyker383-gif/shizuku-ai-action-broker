@@ -13,6 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import android.content.Intent
 import org.json.JSONObject
 
 /** On-device first-pass UI for inspection, transformation previews, local prices, and label creation. */
@@ -29,6 +30,24 @@ class BarcodeLabActivity : AppCompatActivity() {
     private lateinit var formatInput: EditText
     private lateinit var output: TextView
     private var latestTransform: BarcodeTransformResult? = null
+    private val barcodeCommandListener: (CustomBarcodeCommand) -> Unit = { command ->
+        startActivity(Intent(this, BarcodeExperienceActivity::class.java).apply {
+            putExtra(BarcodeExperienceActivity.EXTRA_TYPE, command.type)
+            putExtra(BarcodeExperienceActivity.EXTRA_ID, command.id)
+            putExtra(BarcodeExperienceActivity.EXTRA_VERSION, command.version)
+        })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        BarcodeCommandRuntime.attach(barcodeCommandListener)
+        BarcodeCommandRuntime.consumePending(applicationContext)?.let(barcodeCommandListener)
+    }
+
+    override fun onStop() {
+        BarcodeCommandRuntime.detach(barcodeCommandListener)
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
