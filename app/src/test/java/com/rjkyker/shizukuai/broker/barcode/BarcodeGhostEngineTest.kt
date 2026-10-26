@@ -78,6 +78,21 @@ class BarcodeGhostEngineTest {
     }
 
     @Test
+    fun configuredProviderThatDeclinesDoesNotSilentlyUseOfflineRules() {
+        BarcodeAiPlanner.installProvider(object : BarcodeAiProvider {
+            override val providerName = "TEST_PROVIDER"
+            override fun proposeTransformation(input: String, instruction: String): BarcodeTransformationProposal? = null
+        })
+        try {
+            val result = BarcodeAiPlanner.plan("12345", "Add RJ- to the beginning")
+            assertFalse(result.optBoolean("planned"))
+            assertEquals("TEST_PROVIDER", result.optString("provider"))
+        } finally {
+            BarcodeAiPlanner.installProvider(null)
+        }
+    }
+
+    @Test
     fun naturalLanguagePlannerDoesNotGuessUnsupportedInstructions() {
         val result = BarcodeAiPlanner.plan("12345", "Synchronize with the warehouse")
         assertFalse(result.optBoolean("ok"))
