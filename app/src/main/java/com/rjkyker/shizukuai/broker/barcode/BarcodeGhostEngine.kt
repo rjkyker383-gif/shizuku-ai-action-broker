@@ -16,6 +16,8 @@ data class BarcodeInspection(
     val rawBytesTruncated: Boolean,
     val controlCharacters: List<String>,
     val hasGs1GroupSeparator: Boolean,
+    val gs1Fields: List<JSONObject>,
+    val gs1ParseWarnings: List<String>,
     val looksLikeGtin: Boolean,
     val gtinCheckDigitValid: Boolean?
 ) {
@@ -31,6 +33,8 @@ data class BarcodeInspection(
         .put("raw_bytes_truncated", rawBytesTruncated)
         .put("control_characters", JSONArray(controlCharacters))
         .put("has_gs1_group_separator", hasGs1GroupSeparator)
+        .put("gs1_fields", JSONArray(gs1Fields))
+        .put("gs1_parse_warnings", JSONArray(gs1ParseWarnings))
         .put("looks_like_gtin", looksLikeGtin)
         .put("gtin_check_digit_valid", gtinCheckDigitValid ?: JSONObject.NULL)
 }
@@ -115,9 +119,92 @@ object BarcodeGhostEngine {
             rawBytesTruncated = bytes.size > MAX_HEX_PREVIEW_BYTES,
             controlCharacters = controls,
             hasGs1GroupSeparator = value.contains(GS1_SEPARATOR),
+            gs1Fields = parseGs1Fields(value).first,
+            gs1ParseWarnings = parseGs1Fields(value).second,
             looksLikeGtin = value.length in setOf(8, 12, 13, 14) && value.all(Char::isDigit),
             gtinCheckDigitValid = checkGtinDigit(value)
         )
+    }
+
+    private fun parseGs1Fields(raw: String): Pair<List<JSONObject>, List<String>> {
+        val fields = mutableListOf<JSONObject>()
+        val warnings = mutableListOf<String>()
+        if (raw.isEmpty() || raw.length > MAX_TRANSFORM_CHARS) return fields to warnings
+        if (raw.startsWith("(")) {
+            val matches = Regex("\\((\\d{2,4})\\)([^()]*)").findAll(raw).toList()
+            if (matches.isEmpty()) return fields to listOf("Parenthesized AI notation was not recognized.")
+            matches.forEach { match ->
+                val ai = match.groupValues[1]
+                val value = match.groupValues[2]
+                val definition = aiDefinitions[ai]
+                if (definition == null) warnings.add("Unsupported AI ($ai); value not interpreted.")
+                else if (value.length < definition.min || value.length > definition.max) {
+                    warnings.add("AI $ai has length \${value.length}; expected \${definition.min}..\${definition.max}.")
+                } else fields.add(JSONObject().put("ai", ai).put("name", definition.name).put("value", value))
+            }
+            return fields to warnings
+        }
+        var index = 0
+        while (index < raw.length) {
+            if (raw[index] == GS1_SEPARATOR) { index++; continue }
+            val ai = aiDefinitions.keys.sortedByDescending { it.length }.firstOrNull { raw.startsWith(it, index) }
+            if (ai == null) {
+                warnings.add("Could not identify a recognized application identifier at character $index; parsing stopped.")
+                break
+            }
+            val definition = aiDefinitions.getValue(ai)
+            index += ai.length
+            val value: String
+            if (definition.fixed) {
+                if (index + definition.max > raw.length) {
+                    warnings.add("AI $ai is truncated; expected \${definition.max} data characters.")
+                    break
+                }
+                value = raw.substring(index, index + definition.max)
+                if (value.contains(GS1_SEPARATOR)) {
+                    warnings.add("AI $ai ended before its required fixed length.")
+                    break
+                }
+                index += definition.max
+            } else {
+                val separator = raw.indexOf(GS1_SEPARATOR, index)
+                val end = if (separator >= 0) separator else raw.length
+                value = raw.substring(index, minOf(end, index + definition.max))
+                if (value.length < definition.min) {
+                    warnings.add("AI $ai is shorter than its minimum length \${definition.min}.")
+                    break
+                }
+                index += value.length
+                if (separator >= 0 && index == separator) index++
+                else if (index < end) {
+                    warnings.add("AI $ai exceeded its maximum supported length; parsing stopped.")
+                    break
+                }
+            }
+            fields.add(JSONObject().put("ai", ai).put("name", definition.name).put("value", value))
+        }
+        return fields to warnings
+    }
+
+    private data class AiDefinition(val name: String, val min: Int, val max: Int, val fixed: Boolean)
+    private val aiDefinitions = buildMap {
+        fun fixed(ai: String, name: String, length: Int) { put(ai, AiDefinition(name, length, length, true)) }
+        fun variable(ai: String, name: String, min: Int, max: Int) { put(ai, AiDefinition(name, min, max, false)) }
+        fixed("00", "SSCC", 18); fixed("01", "GTIN", 14); fixed("02", "CONTENT_GTIN", 14)
+        fixed("11", "PRODUCTION_DATE", 6); fixed("12", "DUE_DATE", 6); fixed("13", "PACKAGING_DATE", 6)
+        fixed("15", "BEST_BEFORE_DATE", 6); fixed("16", "SELL_BY_DATE", 6); fixed("17", "EXPIRATION_DATE", 6)
+        fixed("20", "PRODUCT_VARIANT", 2); fixed("422", "COUNTRY_OF_ORIGIN", 3)
+        variable("10", "BATCH_LOT", 1, 20); variable("21", "SERIAL_NUMBER", 1, 20)
+        variable("22", "CONSUMER_PRODUCT_VARIANT", 1, 20); variable("30", "COUNT", 1, 8)
+        variable("37", "COUNT_OF_TRADE_ITEMS", 1, 8); variable("240", "ADDITIONAL_PRODUCT_ID", 1, 30)
+        variable("241", "CUSTOMER_PART_NUMBER", 1, 30); variable("242", "MADE_TO_ORDER_VARIANT", 1, 6)
+        variable("400", "CUSTOMER_PURCHASE_ORDER", 1, 30); variable("401", "CONSIGNMENT", 1, 30)
+        variable("403", "ROUTE_CODE", 1, 30); variable("420", "SHIP_TO_POSTAL_CODE", 1, 20)
+        variable("91", "COMPANY_INTERNAL_1", 1, 30); variable("92", "COMPANY_INTERNAL_2", 1, 30)
+        variable("93", "COMPANY_INTERNAL_3", 1, 30); variable("94", "COMPANY_INTERNAL_4", 1, 30)
+        variable("95", "COMPANY_INTERNAL_5", 1, 30); variable("96", "COMPANY_INTERNAL_6", 1, 30)
+        variable("97", "COMPANY_INTERNAL_7", 1, 30); variable("98", "COMPANY_INTERNAL_8", 1, 30)
+        variable("99", "COMPANY_INTERNAL_9", 1, 30)
     }
 
     /** Literal, bounded operations only; no user-supplied regex or code is evaluated. */
