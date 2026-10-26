@@ -51,6 +51,7 @@ class BarcodeLabActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BarcodeAiProviderSettings.install(applicationContext)
         val last = DataWedgeResultReceiver.lastScanJson.get()
         val initial = last?.optString("data_string", "").orEmpty()
 
@@ -94,16 +95,36 @@ class BarcodeLabActivity : AppCompatActivity() {
                 showMessage("Latest scan loaded. Original value preserved in scan history.")
             }
         }
-        addButton(content, "INTERPRET NATURAL-LANGUAGE INSTRUCTION") {
-            val plan = BarcodeAiPlanner.plan(currentValue(), instructionInput.text.toString())
-            val preview = plan.optJSONObject("preview")
-            if (plan.optBoolean("planned") && preview != null && preview.optBoolean("ok")) {
-                latestTransform = BarcodeTransformResult(
-                    true, currentValue(), preview.optString("operation", ""),
-                    preview.optString("output", "")
-                )
+        addButton(content, "CONFIGURE AI PROVIDER") {
+            showAiProviderDialog()
+        }
+        addButton(content, "TEST AI PROVIDER") {
+            val provider = BarcodeAiProviderSettings.install(applicationContext)
+            if (provider == "OFFLINE_RULE_FALLBACK") {
+                showMessage("No hosted AI provider is configured. Choose CONFIGURE AI PROVIDER first.")
+            } else {
+                showMessage("Testing " + provider + " …")
+                Thread({
+                    val result = BarcodeAiPlanner.plan("BGX-TEST-123", "Add RJ- to the beginning")
+                    runOnUiThread { if (!isFinishing) showMessage(result.toString(2)) }
+                }, "BarcodeAiTest").start()
             }
-            showMessage(plan.toString(2))
+        }
+        addButton(content, "INTERPRET NATURAL-LANGUAGE INSTRUCTION") {
+            val value = currentValue()
+            val instruction = instructionInput.text.toString()
+            showMessage("Planning transformation. Hosted providers may send this barcode value and instruction to your configured endpoint…")
+            Thread({
+                val plan = BarcodeAiPlanner.plan(value, instruction)
+                val preview = plan.optJSONObject("preview")
+                if (plan.optBoolean("planned") && preview != null && preview.optBoolean("ok")) {
+                    latestTransform = BarcodeTransformResult(
+                        true, value, preview.optString("operation", ""),
+                        preview.optString("output", "")
+                    )
+                }
+                runOnUiThread { if (!isFinishing) showMessage(plan.toString(2)) }
+            }, "BarcodeAiPlanner").start()
         }
         addButton(content, "INSPECT CURRENT DATA") {
             val v = currentValue()
@@ -232,6 +253,60 @@ class BarcodeLabActivity : AppCompatActivity() {
         setContentView(scroll)
     }
 
+    private fun showAiProviderDialog() {
+        val saved = BarcodeAiProviderSettings.load(applicationContext)
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        fun input(hintText: String, initial: String, password: Boolean = false): EditText {
+            val edit = EditText(this).apply {
+                hint = hintText
+                setText(initial)
+                setTextColor(Color.WHITE)
+                setHintTextColor(Color.GRAY)
+                if (password) inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            }
+            form.addView(edit, matchWrap())
+            return edit
+        }
+        form.addView(TextView(this).apply {
+            text = "Use an HTTPS OpenAI-compatible chat-completions endpoint. When AI planning is used, the current barcode value and instruction are sent to that endpoint. The API key is stored in encrypted app-private preferences."
+            setTextColor(Color.LTGRAY)
+            textSize = 13f
+            setPadding(0, 0, 0, dp(10))
+        }, matchWrap())
+        val endpoint = input("HTTPS endpoint URL", saved?.endpoint ?: "https://api.openai.com/v1/chat/completions")
+        val model = input("Model name", saved?.model ?: "gpt-4.1-mini")
+        val key = input("API key (blank keeps existing key)", "", password = true)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Configure Barcode AI")
+            .setView(form)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save securely", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    BarcodeAiProviderSettings.save(
+                        applicationContext,
+                        endpoint.text.toString(),
+                        model.text.toString(),
+                        key.text.toString()
+                    )
+                    val provider = BarcodeAiProviderSettings.install(applicationContext)
+                    dialog.dismiss()
+                    showMessage("AI provider saved securely: " + provider + "\nUse TEST AI PROVIDER to verify the connection.")
+                } catch (e: Exception) {
+                    Toast.makeText(this, e.message ?: "Could not save AI settings", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun currentValue(): String = valueInput.text.toString()
     private fun currentValue(): String = valueInput.text.toString()
 
     private fun field(parent: LinearLayout, hintText: String, initial: String): EditText {
