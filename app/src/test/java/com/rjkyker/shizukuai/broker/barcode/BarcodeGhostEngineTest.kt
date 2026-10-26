@@ -29,6 +29,30 @@ class BarcodeGhostEngineTest {
     }
 
     @Test
+    fun parsesCommonGs1FieldsAndParenthesizedNotation() {
+        val raw = "0109506000134352" + "10LOT-7" + "\u001D" + "17271231"
+        val result = BarcodeGhostEngine.inspect(raw, "GS1-128", "unit-test")
+        assertEquals(3, result.gs1Fields.size)
+        assertEquals("GTIN", result.gs1Fields[0].optString("name"))
+        assertEquals("09506000134352", result.gs1Fields[0].optString("value"))
+        assertEquals("BATCH_LOT", result.gs1Fields[1].optString("name"))
+        assertEquals("LOT-7", result.gs1Fields[1].optString("value"))
+        assertEquals("EXPIRATION_DATE", result.gs1Fields[2].optString("name"))
+        assertTrue(result.gs1ParseWarnings.isEmpty())
+
+        val parenthesized = BarcodeGhostEngine.inspect("(01)09506000134352(17)271231")
+        assertEquals(2, parenthesized.gs1Fields.size)
+        assertEquals("271231", parenthesized.gs1Fields[1].optString("value"))
+    }
+
+    @Test
+    fun gs1ParserReportsTruncatedFixedLengthField() {
+        val result = BarcodeGhostEngine.inspect("0109506000134", "GS1-128")
+        assertTrue(result.gs1Fields.isEmpty())
+        assertTrue(result.gs1ParseWarnings.isNotEmpty())
+    }
+
+    @Test
     fun transformationsAreLiteralAndDeterministic() {
         assertEquals("RJ-abc", BarcodeGhostEngine.transform("abc", "prefix", "RJ-").output)
         assertEquals("A-9", BarcodeGhostEngine.transform("A-8", "replace_first", "8", "9").output)
