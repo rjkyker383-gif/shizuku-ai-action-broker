@@ -83,3 +83,21 @@ provider, full product lookup connector, richer catalog UI, additional game mech
 and external source synchronization remain follow-on work. The app reports analysis
 rather than claiming hidden data that was not present in the barcode or a connected
 source.
+
+## Hosted AI provider
+
+Open **Barcode Ghost Lab → CONFIGURE AI PROVIDER** to configure an HTTPS OpenAI-compatible
+chat-completions endpoint, model name, and API key. The key is stored in encrypted
+app-private preferences. Use **TEST AI PROVIDER** to check connectivity. The provider
+only proposes an allow-listed transformation and the result remains a preview until
+the operator applies it. Scanned values and instructions are sent to the configured
+endpoint when hosted planning is used. Leave the provider unconfigured to use the
+offline rule fallback. Never place API keys in source code, repository files, or logs.
+
+## GS1 field inspection
+
+The inspector now attempts best-effort parsing for common fixed-length and
+variable-length GS1 application identifiers, including GTIN, dates, lot/batch,
+serial, quantity, customer references, and selected internal-use fields. It returns
+recognized fields and warnings. This is not a claim of full GS1 support; unsupported
+or ambiguous application identifiers are reported rather than invented.
