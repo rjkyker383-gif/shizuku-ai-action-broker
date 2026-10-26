@@ -90,12 +90,17 @@ class BarcodeLabActivity : AppCompatActivity() {
             val v = currentValue()
             if (v.isEmpty()) return@addButton showMessage("Scan a barcode or enter data first.")
             val lastScan = DataWedgeResultReceiver.lastScanJson.get()
-            val inspection = BarcodeGhostEngine.inspect(
-                v,
-                symbologyInput.text.toString().trim(),
-                lastScan?.optString("source", "").orEmpty()
-            )
-            showMessage(inspection.toJson().toString(2))
+            val savedInspection = lastScan?.optJSONObject("inspection")
+            if (lastScan?.optString("data_string", null) == v && savedInspection != null) {
+                showMessage(savedInspection.toString(2))
+            } else {
+                val inspection = BarcodeGhostEngine.inspect(
+                    v,
+                    symbologyInput.text.toString().trim(),
+                    lastScan?.optString("source", "").orEmpty()
+                )
+                showMessage(inspection.toJson().toString(2))
+            }
         }
         addButton(content, "PREVIEW TRANSFORMATION") {
             val v = currentValue()
@@ -117,6 +122,12 @@ class BarcodeLabActivity : AppCompatActivity() {
                 valueInput.setText(result.output)
                 showMessage("Draft updated in this app. No label, source scan, or external catalog was changed.")
             }
+        }
+
+        addButton(content, "LOOK UP LOCAL CATALOG RECORD") {
+            val barcode = currentValue()
+            if (barcode.isBlank()) return@addButton showMessage("Scan or enter a barcode first.")
+            showMessage(BarcodeWorkspaceStore.lookup(applicationContext, barcode).toString(2))
         }
 
         addButton(content, "SAVE LOCAL CATALOG PRICE") {
