@@ -129,6 +129,11 @@ class BarcodeExperienceActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(20))
         }, matchWrap())
 
+        if (id == "BARCODE_MEMORY" || id == "SCAN_SEQUENCE") {
+            showSequenceGame(id)
+            return
+        }
+
         if (id == "GHOST_CIPHER") {
             val a = Random.nextInt(11, 70)
             val b = Random.nextInt(11, 70)
@@ -158,7 +163,8 @@ class BarcodeExperienceActivity : AppCompatActivity() {
             root.addView(submit, matchWrap())
             submit.setOnClickListener {
                 if (input.text.toString().toIntOrNull() == answer) {
-                    result.text = "CIPHER CRACKED. REWARD UNLOCKED."
+                    val totalWins = recordWin(id)
+                    result.text = "CIPHER CRACKED. REWARD UNLOCKED.\nTOTAL WINS: $totalWins"
                     result.setTextColor(Color.rgb(100, 255, 160))
                     it.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 } else {
@@ -185,7 +191,8 @@ class BarcodeExperienceActivity : AppCompatActivity() {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             count++
             if (count >= 5) {
-                progress.text = "COMPLETE. HIDDEN REWARD UNLOCKED."
+                val totalWins = recordWin(id)
+                progress.text = "COMPLETE. HIDDEN REWARD UNLOCKED.\nTOTAL WINS: $totalWins"
                 progress.setTextColor(Color.rgb(100, 255, 160))
                 button.text = "PLAY AGAIN"
                 button.setOnClickListener {
@@ -198,6 +205,83 @@ class BarcodeExperienceActivity : AppCompatActivity() {
                 progress.text = "PROGRESS: " + count + " / 5"
             }
         }
+    }
+
+    private fun showSequenceGame(id: String) {
+        val sequence = List(4) { Random.nextInt(1, 5) }
+        val memoryMode = id == "BARCODE_MEMORY"
+        val sequenceText = TextView(this).apply {
+            text = if (memoryMode) "MEMORIZE: " + sequence.joinToString(" · ")
+                else "FOLLOW THE SEQUENCE: " + sequence.joinToString(" · ")
+            textSize = 22f
+            setTextColor(Color.rgb(120, 240, 255))
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(20))
+        }
+        root.addView(sequenceText, matchWrap())
+        val status = TextView(this).apply {
+            text = "Tap the numbered buttons in the correct order."
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(16))
+        }
+        root.addView(status, matchWrap())
+        if (memoryMode) {
+            root.postDelayed({
+                if (!isFinishing && !isDestroyed) sequenceText.text = "SEQUENCE HIDDEN"
+            }, 2200L)
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        root.addView(row, matchWrap())
+        var position = 0
+        var finished = false
+        for (number in 1..4) {
+            val button = Button(this).apply { text = number.toString() }
+            row.addView(button, LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+                marginStart = dp(3)
+                marginEnd = dp(3)
+            })
+            button.setOnClickListener { view ->
+                if (finished) return@setOnClickListener
+                if (number == sequence[position]) {
+                    position++
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (position == sequence.size) {
+                        finished = true
+                        val totalWins = recordWin(id)
+                        status.text = "SEQUENCE CRACKED! TOTAL WINS: $totalWins"
+                        status.setTextColor(Color.rgb(100, 255, 160))
+                        sequenceText.text = "ꙮ REWARD UNLOCKED ꙮ"
+                        for (i in 0 until row.childCount) row.getChildAt(i).isEnabled = false
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    } else {
+                        status.text = "CORRECT: $position / ${sequence.size}"
+                    }
+                } else {
+                    position = 0
+                    status.text = "WRONG SIGNAL. Sequence reset to the beginning."
+                    status.setTextColor(Color.rgb(255, 150, 150))
+                    view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                }
+            }
+        }
+    }
+
+    private fun recordWin(id: String): Int {
+        val prefs = getSharedPreferences("bgx_game_progress", MODE_PRIVATE)
+        val total = prefs.getInt("wins_total", 0) + 1
+        val perGame = prefs.getInt("wins_$id", 0) + 1
+        prefs.edit()
+            .putInt("wins_total", total)
+            .putInt("wins_$id", perGame)
+            .putString("last_unlocked_game", id)
+            .putLong("last_win_at_epoch_ms", System.currentTimeMillis())
+            .apply()
+        return total
     }
 
     private fun animateBackground() {
