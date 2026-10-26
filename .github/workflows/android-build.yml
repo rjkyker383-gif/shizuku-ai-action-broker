@@ -1,0 +1,36 @@
+name: Android build and unit tests
+
+on:
+  push:
+    branches:
+      - main
+      - feature/tc22-barcode-ghost-engine
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Run local unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tc22-barcode-ghost-engine-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

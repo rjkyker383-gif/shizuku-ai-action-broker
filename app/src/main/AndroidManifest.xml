@@ -36,6 +36,18 @@
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <activity
+            android:name=".barcode.BarcodeLabActivity"
+            android:exported="false"
+            android:label="Barcode Ghost Lab"
+            android:theme="@style/Theme.ShizukuAiBroker" />
+
+        <activity
+            android:name=".barcode.BarcodeExperienceActivity"
+            android:exported="false"
+            android:label="Barcode Ghost Experience"
+            android:theme="@style/Theme.ShizukuAiBroker" />
+
+        <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.ShizukuAiBroker">
@@ -45,7 +57,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Accessibility automation for BrokerServer actions -->
         <service
             android:name=".accessibility.AgentAccessibilityService"
             android:exported="true"
@@ -58,7 +69,6 @@
                 android:resource="@xml/agent_accessibility_service" />
         </service>
 
-        <!-- Delegated Admin receiver (null-admin DPM contract) -->
         <receiver
             android:name=".receiver.DelegatedAdminProfileReceiver"
             android:exported="true"
@@ -73,7 +83,6 @@
                 android:value="true" />
         </receiver>
 
-        <!-- CLI service for worker-admin-* helpers -->
         <service
             android:name=".cli.AdminCliService"
             android:exported="true">
@@ -82,7 +91,6 @@
             </intent-filter>
         </service>
 
-        <!-- Broadcast receiver for scopes dump -->
         <receiver
             android:name=".cli.AdminCliReceiver"
             android:exported="true">
@@ -91,8 +99,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- DataWedge RESULT_ACTION + scan notify (Zebra/Symbol only; soft-fail elsewhere).
-             exported=true required so DataWedge can deliver broadcasts to this package. -->
         <receiver
             android:name=".datawedge.DataWedgeResultReceiver"
             android:exported="true"
@@ -107,7 +113,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Shell-friendly read-only DataWedge query trigger (writes JSON to external files dir) -->
         <receiver
             android:name=".datawedge.DataWedgeQueryReceiver"
             android:exported="true">
@@ -116,7 +121,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Keeps BrokerServer + DataWedge receiver alive -->
         <service
             android:name=".service.BrokerService"
             android:exported="false"

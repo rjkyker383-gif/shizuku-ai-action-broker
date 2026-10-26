@@ -16,6 +16,11 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeApi
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultStore
+import com.rjkyker.shizukuai.broker.barcode.BarcodeGhostEngine
+import com.rjkyker.shizukuai.broker.barcode.BarcodeAiPlanner
+import com.rjkyker.shizukuai.broker.barcode.BarcodeAiProviderSettings
+import com.rjkyker.shizukuai.broker.barcode.BarcodeLabelGenerator
+import com.rjkyker.shizukuai.broker.barcode.BarcodeWorkspaceStore
 import com.rjkyker.shizukuai.broker.cli.AdminCliService
 import org.json.JSONArray
 import org.json.JSONObject
@@ -74,6 +79,15 @@ class ActionRouter(private val context: Context) {
                     DataWedgeQuery.run(context, q, t)
                 }
                 "datawedge_results" -> DataWedgeResultStore.readAll(context).put("ok", true)
+                "barcode_inspect" -> handleBarcodeInspect(body)
+                "barcode_transform_preview" -> handleBarcodeTransformPreview(body)
+                "barcode_command_preview" -> handleBarcodeCommandPreview(body)
+                "barcode_plan_instruction" -> handleBarcodePlanInstruction(body)
+                "barcode_catalog_lookup" -> BarcodeWorkspaceStore.lookup(
+                    context, body.optString("barcode", body.optString("value", ""))
+                )
+                "barcode_catalog_update" -> BarcodeWorkspaceStore.upsert(context, body)
+                "barcode_label_generate" -> BarcodeLabelGenerator.generate(context, body)
                 "dhizuku_status", "dhizuku_connect", "dhizuku_scopes", "dhizuku_add_restriction",
                 "dhizuku_clear_restriction", "dhizuku_hide_app", "dhizuku_suspend_app",
                 "dhizuku_perm", "dhizuku_set_scopes" -> handleDhizuku(op, body)
@@ -82,6 +96,49 @@ class ActionRouter(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "route failed op=$op", e)
             err(e.message ?: "route error")
+        }
+    }
+
+    private fun handleBarcodeInspect(body: JSONObject): JSONObject {
+        val last = DataWedgeResultReceiver.lastScanJson.get()
+        val value = if (body.has("value")) body.optString("value", "") else last?.optString("data_string", "").orEmpty()
+        if (value.isEmpty()) return err("barcode_inspect requires value or a previous scan")
+        val symbology = body.optString("symbology", last?.optString("label_type", "").orEmpty())
+        val source = body.optString("source", last?.optString("source", "").orEmpty())
+        return BarcodeGhostEngine.inspect(value, symbology, source).toJson().put("ok", true)
+    }
+
+    private fun handleBarcodeTransformPreview(body: JSONObject): JSONObject {
+        val last = DataWedgeResultReceiver.lastScanJson.get()
+        val value = if (body.has("value")) body.optString("value", "") else last?.optString("data_string", "").orEmpty()
+        if (value.isEmpty()) return err("barcode_transform_preview requires value or a previous scan")
+        return BarcodeGhostEngine.transform(
+            input = value,
+            operationName = body.optString("operation", ""),
+            argument = body.optString("argument", ""),
+            replacement = body.optString("replacement", "")
+        ).toJson()
+    }
+
+    private fun handleBarcodePlanInstruction(body: JSONObject): JSONObject {
+        val last = DataWedgeResultReceiver.lastScanJson.get()
+        val value = if (body.has("value")) body.optString("value", "") else last?.optString("data_string", "").orEmpty()
+        if (value.isEmpty()) return err("barcode_plan_instruction requires value or a previous scan")
+        val instruction = body.optString("instruction", "")
+        BarcodeAiProviderSettings.install(context.applicationContext)
+        return BarcodeAiPlanner.plan(value, instruction)
+    }
+
+    private fun handleBarcodeCommandPreview(body: JSONObject): JSONObject {
+        val value = body.optString("value", "")
+        if (value.isEmpty()) return err("barcode_command_preview requires value")
+        return when (val parsed = BarcodeGhostEngine.parseCommand(value)) {
+            is com.rjkyker.shizukuai.broker.barcode.CommandParseResult.Valid ->
+                JSONObject().put("ok", true).put("recognized", true).put("command", parsed.command.toJson())
+            is com.rjkyker.shizukuai.broker.barcode.CommandParseResult.Invalid ->
+                JSONObject().put("ok", false).put("recognized", false).put("error", parsed.reason)
+            com.rjkyker.shizukuai.broker.barcode.CommandParseResult.NotCommand ->
+                JSONObject().put("ok", true).put("recognized", false).put("message", "not a BGX command")
         }
     }
 

@@ -96,6 +96,17 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="@string/query_datawedge"
+        app:layout_constraintBottom_toTopOf="@id/barcodeLabButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/barcodeLabButton"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Open Barcode Ghost Lab"
         app:layout_constraintBottom_toTopOf="@id/dhizukuButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />

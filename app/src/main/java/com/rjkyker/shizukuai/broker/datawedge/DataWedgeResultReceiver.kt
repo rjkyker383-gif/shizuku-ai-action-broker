@@ -7,6 +7,10 @@ import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.rjkyker.shizukuai.broker.barcode.BarcodeCommandRuntime
+import com.rjkyker.shizukuai.broker.barcode.BarcodeGhostEngine
+import com.rjkyker.shizukuai.broker.barcode.CommandParseResult
+import com.rjkyker.shizukuai.broker.barcode.CustomBarcodeCommand
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
@@ -14,14 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Receives DataWedge RESULT_ACTION replies and scan notify broadcasts.
- *
- * Registered two ways:
- *  - in the manifest (explicit / package-targeted deliveries, cold start), and
- *  - dynamically via [ensureRegistered] (Android 8+ drops implicit broadcasts to
- *    manifest receivers, and DataWedge's RESULT_ACTION is implicit on many builds).
- * Duplicates are filtered by [DataWedgeResultStore.record].
- *
- * Parsed replies are persisted by [DataWedgeResultStore] (JSON files readable via adb).
+ * BGX processing is bounded and allow-listed. Barcode payloads are never code.
  */
 class DataWedgeResultReceiver : BroadcastReceiver() {
 
@@ -66,11 +63,44 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
             .put("data_string", data)
             .put("label_type", label)
             .put("source", source)
+
+        val inspection = BarcodeGhostEngine.inspect(data, label, source, extractRawBytes(intent))
+        json.put("inspection", inspection.toJson())
+        var commandToDispatch: CustomBarcodeCommand? = null
+        when (val parsed = BarcodeGhostEngine.parseCommand(data)) {
+            is CommandParseResult.Valid -> {
+                commandToDispatch = parsed.command
+                json.put("programmed_command", parsed.command.toJson())
+                    .put("command_runtime_status", "REGISTERED")
+            }
+            is CommandParseResult.Invalid -> json.put("bgx_parse_error", parsed.reason)
+            CommandParseResult.NotCommand -> Unit
+        }
+
+        // Persist/deduplicate before dispatch so duplicate receivers don't relaunch an event.
         if (!DataWedgeResultStore.record(context.applicationContext, json)) return
         lastEventJson.set(json)
         lastScanJson.set(json)
         lastStatusString.set("scan: $label | $data")
+        commandToDispatch?.let { BarcodeCommandRuntime.dispatch(context.applicationContext, it) }
         Log.i(TAG, "SCAN: label=$label data=$data source=$source")
+    }
+
+    private fun extractRawBytes(intent: Intent): ByteArray? {
+        val extras = intent.extras ?: return null
+        val keys = listOf(
+            "com.symbol.datawedge.decode_data",
+            "com.symbol.datawedge.decode_data_bytes"
+        )
+        for (key in keys) {
+            @Suppress("DEPRECATION")
+            when (val value = extras.get(key)) {
+                is ByteArray -> return value
+                is Array<*> -> value.firstNotNullOfOrNull { it as? ByteArray }?.let { return it }
+                is Collection<*> -> value.firstNotNullOfOrNull { it as? ByteArray }?.let { return it }
+            }
+        }
+        return null
     }
 
     companion object {
@@ -139,7 +169,6 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
                 json.put("value", toJsonValue(v))
             }
             if (!json.has("kind")) {
-                // Map by echoed command if DataWedge only sent RESULT/RESULT_INFO
                 val cmd = json.optString("command")
                 RESULT_KINDS.values.firstOrNull { k ->
                     cmd.endsWith(DataWedgeQuery.KINDS[k]?.substringAfterLast('.') ?: "#")
