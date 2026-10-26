@@ -107,6 +107,7 @@ object BarcodeGhostEngine {
                 "index=$index " + String.format(Locale.ROOT, "U+%04X", char.code)
             } else null
         }.take(MAX_CONTROL_PREVIEW)
+        val (gs1Fields, gs1Warnings) = parseGs1Fields(value)
         return BarcodeInspection(
             originalValue = value,
             symbology = symbology,
@@ -119,8 +120,8 @@ object BarcodeGhostEngine {
             rawBytesTruncated = bytes.size > MAX_HEX_PREVIEW_BYTES,
             controlCharacters = controls,
             hasGs1GroupSeparator = value.contains(GS1_SEPARATOR),
-            gs1Fields = parseGs1Fields(value).first,
-            gs1ParseWarnings = parseGs1Fields(value).second,
+            gs1Fields = gs1Fields,
+            gs1ParseWarnings = gs1Warnings,
             looksLikeGtin = value.length in setOf(8, 12, 13, 14) && value.all(Char::isDigit),
             gtinCheckDigitValid = checkGtinDigit(value)
         )
