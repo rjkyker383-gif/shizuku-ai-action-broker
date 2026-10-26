@@ -124,6 +124,7 @@ class ActionRouter(private val context: Context) {
         val value = if (body.has("value")) body.optString("value", "") else last?.optString("data_string", "").orEmpty()
         if (value.isEmpty()) return err("barcode_plan_instruction requires value or a previous scan")
         val instruction = body.optString("instruction", "")
+        BarcodeAiProviderSettings.install(context.applicationContext)
         return BarcodeAiPlanner.plan(value, instruction)
     }
 
