@@ -18,6 +18,7 @@ import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultStore
 import com.rjkyker.shizukuai.broker.barcode.BarcodeGhostEngine
 import com.rjkyker.shizukuai.broker.barcode.BarcodeAiPlanner
+import com.rjkyker.shizukuai.broker.barcode.BarcodeAiProviderSettings
 import com.rjkyker.shizukuai.broker.barcode.BarcodeLabelGenerator
 import com.rjkyker.shizukuai.broker.barcode.BarcodeWorkspaceStore
 import com.rjkyker.shizukuai.broker.cli.AdminCliService
