@@ -7,6 +7,7 @@ Localhost action broker (127.0.0.1:17999) with:
 - **AccessibilityService** UI automation (tap / swipe / text / ui dump / back / home)
 - **ShizukuGateway** binder status + permission request (Shizuku API)
 - **ShizukuBridge** prefers Shizuku `newProcess` when binder+permission OK; else `rish -c` → `sh -c`
+- **Dual AI shell routes**: `exec_shell` can select `auto`, `shizuku`, `termux`, `local`, or `upstream`; results report the actual backend, exit code, stdout, stderr, and timeout state. Muse-aligned denylist on every route.
 - **ActionAllowList** / **ActionRequest** structured allow-list (router ops + MVP GET_*)
 - **Delegated Device Admin** (null-admin DPM) via `DelegatedAdminActionHandler`
 - **AdminCliService** / **AdminCliReceiver** for Termux/`rish` helpers
@@ -284,3 +285,19 @@ See also `/workspace/android-bridge/docs/DATAWEDGE.md`.
 | `MainActivity` | Package / server / a11y / Shizuku / scopes status |
 
 Null-admin contract: always call DPM with `admin = null` when scopes are delegated to this package.
+
+
+## AI shell access: Shizuku + Termux
+
+The MCP `exec_shell` tool requires `confirm=true` for command execution. Use `route=auto` to prefer the granted Shizuku binder, then Termux when its external-command permission is available, then the existing local fallback. Use `route=shizuku` or `route=termux` to request a specific backend. Every result reports `via`, `route`, `exit_code`, `stdout`, `stderr`, and `timed_out`.
+
+A Muse-aligned denylist is enforced on **every** route (no uninstall / pm clear / wipe / SMS-dialer intents / bare dumpsys or dumpsys activity|jobscheduler|notification|procstats).
+
+### Termux setup (one-time)
+
+1. Install Termux and open it once.
+2. In Termux set `allow-external-apps=true` in `~/.termux/termux.properties`, then restart Termux.
+3. Grant this app **Run commands in Termux environment** if Android exposes it.
+4. Test with `{"command":"id; pwd; echo TERMUX_BRIDGE_OK","route":"termux","confirm":true}`.
+
+If Termux is missing or its permission/external-app setting is off, the bridge returns a setup error rather than claiming Termux ran the command.

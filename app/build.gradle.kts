@@ -11,8 +11,8 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.8.6-dev"
+        versionCode = 17
+        versionName = "1.8.7-dev"
     }
 
     buildTypes {

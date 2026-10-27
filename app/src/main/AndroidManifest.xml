@@ -20,6 +20,8 @@
     <!-- 1.8.5 Hotspot / Extender: LocalOnlyHotspot fallback on Android 13+ -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- Explicit user-granted bridge into the Termux shell environment. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <!-- Privileged: grant via pm grant / device-owner; used by BootReceiver keepalive -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Dhizuku (device-owner sharing): makes the broker show up in Dhizuku's app list -->
@@ -29,6 +31,7 @@
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="com.termux" />
         <package android:name="com.rosan.dhizuku" />
         <package android:name="com.tailscale.ipn" />
         <package android:name="com.symbol.datawedge" />
@@ -68,6 +71,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Receives command results returned by Termux RUN_COMMAND PendingIntents. -->
+        <receiver
+            android:name=".shell.TermuxShellResultReceiver"
+            android:exported="false" />
 
         <!-- Accessibility automation for BrokerServer actions -->
         <service

@@ -1,5 +1,6 @@
 package com.rjkyker.shizukuai.broker.shell
 
+import android.os.Looper
 import android.util.Log
 import com.rjkyker.shizukuai.broker.bridge.ShellResult
 import com.rjkyker.shizukuai.broker.bridge.ShizukuBridge
@@ -50,8 +51,14 @@ object ShellExecutor {
         var future: Future<*>? = null
     )
 
-    fun execSync(command: String, timeoutSec: Long = DEFAULT_TIMEOUT_SEC): ShellResult =
-        ShizukuBridge.execSeparate(command, timeoutSec.coerceIn(1L, 300L))
+    fun execSync(command: String, timeoutSec: Long = DEFAULT_TIMEOUT_SEC): ShellResult {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return ShellResult(-1, "", "ShellExecutor.execSync refused on main thread", "denied")
+        }
+        val denied = ShellDenylist.check(command)
+        if (!denied.allowed) return ShellResult(-1, "", "denied: ${denied.reason}", "denied")
+        return ShizukuBridge.execSeparate(command, timeoutSec.coerceIn(1L, 300L))
+    }
 
     fun startSession(command: String, timeoutSec: Long = DEFAULT_TIMEOUT_SEC): JSONObject {
         pruneFinished()
@@ -61,6 +68,8 @@ object ShellExecutor {
                 .put("active", listSessions())
         }
         if (command.isBlank()) return JSONObject().put("ok", false).put("error", "command required")
+        val denied = ShellDenylist.check(command)
+        if (!denied.allowed) return JSONObject().put("ok", false).put("error", "denied: ${denied.reason}")
         val id = UUID.randomUUID().toString().take(8)
         val session = Session(id = id, command = command, startedAtMs = System.currentTimeMillis())
         sessions[id] = session
