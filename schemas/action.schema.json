@@ -39,6 +39,7 @@
         "datawedge_last",
         "datawedge_query",
         "datawedge_results",
+        "scan_history",
         "dhizuku_status",
         "dhizuku_connect",
         "dhizuku_scopes",
