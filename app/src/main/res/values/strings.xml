@@ -81,6 +81,7 @@
     <string name="hotspot_stop">Stop hotspot</string>
     <string name="hotspot_show_pass">Show hotspot password</string>
     <string name="hotspot_idle">Hotspot: tap Refresh or Start to read status…</string>
+    <string name="broker_pause_label">Pause broker (stop background loops; MCP stays up)</string>
     <string name="wifi_detection_label">Wi-Fi detection (nearby AP signal + presence)</string>
     <string name="hotspot_note">Shares this phone\'s internet as "TC22-Extender" (WPA2, password made on this phone). If the phone can keep Wi-Fi and the hotspot on together it repeats your Wi-Fi; otherwise it shares mobile data. It can\'t boost other phones\' radios. It helps when the TC22 is placed where the signal is stronger. Wi-Fi detection only measures signal strength at this phone: no through-wall view, no tracking of people.</string>
 </resources>

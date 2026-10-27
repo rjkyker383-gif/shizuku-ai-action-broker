@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
+import android.os.Looper
 import android.os.Bundle
 import android.util.Base64
 import android.view.Display
@@ -311,6 +312,12 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     private fun dispatchGestureSync(gesture: GestureDescription, timeoutMs: Long = 3000L): Boolean {
+        // 1.8.6: never block the main/UI thread waiting on a gesture — MCP callers already
+        // run on BrokerServer worker threads; if somehow invoked on main, refuse the wait.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Log.w(TAG, "dispatchGestureSync refused on main thread")
+            return false
+        }
         val latch = CountDownLatch(1)
         val ok = AtomicBoolean(false)
         val accepted = dispatchGesture(

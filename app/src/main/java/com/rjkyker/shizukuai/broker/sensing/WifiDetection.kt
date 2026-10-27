@@ -7,6 +7,7 @@ import android.location.LocationManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
+import com.rjkyker.shizukuai.broker.service.BrokerPause
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -55,6 +56,10 @@ object WifiDetection {
         thread = Thread({
             var n = 0
             while (!Thread.currentThread().isInterrupted && isEnabled(app)) {
+                if (BrokerPause.isPaused(app)) {
+                    try { Thread.sleep(AP_SCAN_MS) } catch (_: InterruptedException) { break }
+                    continue
+                }
                 runCatching { scanAps(app, requestFresh = true) }.onFailure { lastApError = it.message ?: "scan failed" }
                 if (n % PRESENCE_EVERY_N == 0) runCatching { WifiPresenceEngine.scan(app, 4_000L) }
                 n++; rounds++

@@ -10,8 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -40,7 +40,9 @@ import rikka.shizuku.Shizuku
  */
 class BrokerService : Service() {
 
-    private val handler = Handler(Looper.getMainLooper())
+    // 1.8.6: watchdog runs on a background HandlerThread (never the main UI thread).
+    private val watchdogThread = HandlerThread("broker-watchdog").also { it.start() }
+    private val handler = Handler(watchdogThread.looper)
     private var bindersRegistered = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
@@ -63,6 +65,10 @@ class BrokerService : Service() {
         override fun run() {
             try {
                 ensureServer()
+                if (BrokerPause.isPaused(applicationContext)) {
+                    // Keep MCP alive; do not restart background loops while paused.
+                    return
+                }
                 // Cheap: rebind if the Tailscale IP appeared/changed without a network callback.
                 runCatching { BrokerServer.get()?.rebindIfNeeded() }
                 // Re-init Dhizuku if it was installed but the binder went away after a reboot.
@@ -100,8 +106,10 @@ class BrokerService : Service() {
         runCatching { RoamKeeper.start(applicationContext) }
         DataWedgeResultReceiver.ensureRegistered(applicationContext)
         autoRepairDataWedgeOnce()
-        // 1.8.5: Wi-Fi detection is default ON (near-device AP RSSI + presence loop).
-        runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
+        // 1.8.5+: Wi-Fi detection default ON; skip start when Pause is on.
+        if (!BrokerPause.isPaused(applicationContext)) {
+            runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
+        }
         handler.postDelayed(watchdog, WATCHDOG_MS)
     }
 
@@ -212,6 +220,7 @@ class BrokerService : Service() {
         val status = buildString {
             append("MCP :${BrokerServer.PORT}")
             append(" · sticky")
+            if (BrokerPause.isPaused(this@BrokerService)) append(" · PAUSED")
             if (upHost.isNotEmpty()) append(" · up→").append(upHost) else append(" · up unset")
             if (shizuku != null) {
                 append(if (shizuku.binderAlive && shizuku.permissionGranted) " · Shizuku OK" else " · Shizuku …")
@@ -235,6 +244,7 @@ class BrokerService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(watchdog)
+        runCatching { watchdogThread.quitSafely() }
         if (bindersRegistered) {
             try {
                 Shizuku.removeBinderReceivedListener(binderReceivedListener)

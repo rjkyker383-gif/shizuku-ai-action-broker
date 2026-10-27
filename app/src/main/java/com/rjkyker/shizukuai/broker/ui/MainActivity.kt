@@ -42,6 +42,7 @@ import com.rjkyker.shizukuai.broker.voice.LocalAgent
 import com.rjkyker.shizukuai.broker.voice.MuseVoiceClient
 import com.rjkyker.shizukuai.broker.voice.TalkController
 import com.rjkyker.shizukuai.broker.net.RoamKeeper
+import com.rjkyker.shizukuai.broker.service.BrokerPause
 import org.json.JSONObject
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
@@ -826,6 +827,15 @@ class MainActivity : AppCompatActivity() {
     // ---------------- Hotspot / Extender + Wi-Fi detection (1.8.5) ----------------
 
     private fun setupHotspot() {
+        binding.brokerPauseSwitch.isChecked = BrokerPause.isPaused(this)
+        binding.brokerPauseSwitch.setOnCheckedChangeListener { _, on ->
+            ioSafe {
+                BrokerPause.setPaused(applicationContext, on)
+                runOnUiThread {
+                    binding.brokerPauseSwitch.isChecked = BrokerPause.isPaused(applicationContext)
+                }
+            }
+        }
         binding.wifiDetectionSwitch.isChecked = com.rjkyker.shizukuai.broker.sensing.WifiDetection.isEnabled(this)
         binding.wifiDetectionSwitch.setOnCheckedChangeListener { _, on ->
             ioSafe {

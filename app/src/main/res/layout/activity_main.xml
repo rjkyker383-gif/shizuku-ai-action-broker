@@ -249,6 +249,15 @@
                         android:text="@string/hotspot_idle" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/brokerPauseSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:checked="false"
+                        android:textColor="@color/cc_text"
+                        android:text="@string/broker_pause_label" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/wifiDetectionSwitch"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

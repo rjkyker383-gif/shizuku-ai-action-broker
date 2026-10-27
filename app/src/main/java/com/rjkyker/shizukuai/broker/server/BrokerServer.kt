@@ -22,7 +22,10 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Base64
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -49,7 +52,13 @@ class BrokerServer(private val context: Context) {
     private val running = AtomicBoolean(false)
     private var serverSocket: ServerSocket? = null
     private var thread: Thread? = null
-    private val pool = Executors.newCachedThreadPool()
+    // 1.8.6: bounded workers — a flood of requests must not spawn unlimited threads.
+    private val pool = ThreadPoolExecutor(
+        POOL_CORE, POOL_MAX, 60L, TimeUnit.SECONDS,
+        LinkedBlockingQueue(POOL_QUEUE),
+        { r -> Thread(r, "BrokerServer-worker").also { it.isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy()
+    )
     private val router = ActionRouter(context.applicationContext)
     private val tools = McpToolExecutor(context.applicationContext, router)
     private val mcp = McpJsonRpcHandler(tools)
@@ -117,7 +126,17 @@ class BrokerServer(private val context: Context) {
         while (running.get() && !ss.isClosed) {
             try {
                 val socket = ss.accept()
-                pool.execute { handleClient(socket) }
+                try {
+                    pool.execute { handleClient(socket) }
+                } catch (_: RejectedExecutionException) {
+                    runCatching {
+                        writeResponse(
+                            socket, 503, "application/json",
+                            JSONObject().put("ok", false).put("error", "server busy").toString()
+                        )
+                    }
+                    runCatching { socket.close() }
+                }
             } catch (e: Exception) {
                 if (running.get() && !ss.isClosed) Log.w(TAG, "accept error: ${e.message}")
             }
@@ -131,6 +150,7 @@ class BrokerServer(private val context: Context) {
         boundAddresses = emptyList()
         serverSocket = null
         thread = null
+        runCatching { pool.shutdownNow() }
     }
 
     private fun handleClient(socket: Socket) {
@@ -196,6 +216,14 @@ class BrokerServer(private val context: Context) {
                 return
             }
 
+            if (contentLength > MAX_BODY_BYTES) {
+                writeResponse(
+                    socket, 413, "application/json",
+                    JSONObject().put("ok", false).put("error", "body too large")
+                        .put("max_bytes", MAX_BODY_BYTES).toString()
+                )
+                return
+            }
             val body = if (contentLength > 0) {
                 val bytes = ByteArray(contentLength)
                 if (!readFully(input, bytes)) {
@@ -215,6 +243,7 @@ class BrokerServer(private val context: Context) {
                         .put("port", PORT)
                         .put("accessibility", AgentAccessibilityService.isEnabled())
                         .put("wifi_detection", runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stateJson(context) }.getOrNull())
+                        .put("paused", runCatching { com.rjkyker.shizukuai.broker.service.BrokerPause.isPaused(context) }.getOrDefault(false))
                         .put("package", context.packageName)
                         .put("version", versionName())
                         .put("mcp", true)
@@ -454,10 +483,11 @@ class BrokerServer(private val context: Context) {
         out.write(handshake.toByteArray(StandardCharsets.US_ASCII))
         out.flush()
         // Keep the socket open for MCP JSON-RPC frames until the client closes.
-        socket.soTimeout = 0
+        // 1.8.6: idle timeout so a half-open WS cannot hold a worker forever.
+        socket.soTimeout = WS_IDLE_MS.toInt()
         try {
             while (running.get() && !socket.isClosed) {
-                val frame = readWsFrame(input) ?: break
+                val frame = try { readWsFrame(input) } catch (_: java.net.SocketTimeoutException) { break } ?: break
                 when (frame.opcode) {
                     0x8 -> { // close
                         writeWsFrame(out, 0x8, frame.payload)
@@ -565,6 +595,11 @@ class BrokerServer(private val context: Context) {
         const val PORT = 17999
         private const val WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
         private const val MAX_WS_PAYLOAD = 2 * 1024 * 1024
+        private const val MAX_BODY_BYTES = 2 * 1024 * 1024
+        private const val WS_IDLE_MS = 5 * 60 * 1000L
+        private const val POOL_CORE = 4
+        private const val POOL_MAX = 8
+        private const val POOL_QUEUE = 32
 
         @Volatile
         private var instance: BrokerServer? = null

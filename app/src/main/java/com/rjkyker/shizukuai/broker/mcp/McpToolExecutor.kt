@@ -22,6 +22,7 @@ import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
 import com.rjkyker.shizukuai.broker.sensing.WifiDetection
 import com.rjkyker.shizukuai.broker.hotspot.HotspotManager
 import com.rjkyker.shizukuai.broker.server.BrokerServer
+import com.rjkyker.shizukuai.broker.service.BrokerPause
 import com.rjkyker.shizukuai.broker.shell.ShellExecutor
 import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
@@ -71,6 +72,9 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_A11Y_SCREENSHOT, TOOL_A11Y_UI_TREE, TOOL_A11Y_TAP, TOOL_A11Y_SWIPE,
                 TOOL_A11Y_TEXT, TOOL_A11Y_GLOBAL, TOOL_A11Y_CLICK_TEXT -> a11yTool(name, args)
                 TOOL_DISCOVERY -> JSONObject().put("ok", true).put("manifest", DiscoveryProvider.manifest(context))
+                TOOL_BROKER_PAUSE -> BrokerPause.setPaused(context, true)
+                TOOL_BROKER_RESUME -> BrokerPause.setPaused(context, false)
+                TOOL_BROKER_PAUSE_STATUS -> BrokerPause.status(context)
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
@@ -417,6 +421,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         }
         return JSONObject()
             .put("ok", true)
+            .put("paused", BrokerPause.isPaused(context))
             .put("package", context.packageName)
             .put("version", versionName())
             .put("sdk_int", Build.VERSION.SDK_INT)
@@ -506,6 +511,9 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
         const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
         const val TOOL_DISCOVERY = "discovery_info"
+        const val TOOL_BROKER_PAUSE = "broker_pause"
+        const val TOOL_BROKER_RESUME = "broker_resume"
+        const val TOOL_BROKER_PAUSE_STATUS = "broker_pause_status"
         const val TOOL_A11Y_SCREENSHOT = "a11y_screenshot"
         const val TOOL_A11Y_UI_TREE = "a11y_ui_tree"
         const val TOOL_A11Y_TAP = "a11y_tap"
@@ -522,7 +530,8 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             TOOL_DATAWEDGE, TOOL_SCAN_HISTORY, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
             TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE, TOOL_WIFI_DETECTION,
             TOOL_HOTSPOT_START, TOOL_HOTSPOT_STOP, TOOL_HOTSPOT_STATUS,
-            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY
+            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY,
+            TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS
         ) + A11Y_TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
@@ -799,6 +808,17 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 "Find a node by text/content-description (contains, or exact=true) and click it (clickable ancestor, else tap its centre). MEDIUM.",
                 JSONObject().put("text", prop("string")).put("exact", prop("boolean")).put("index", prop("integer", "which match, default 0")),
                 listOf("text")))
+
+
+            .put(tool(TOOL_BROKER_PAUSE,
+                "Pause background loops (Wi-Fi detection etc.) but keep the MCP server + accessibility alive. Soft.",
+                JSONObject(), emptyList()))
+            .put(tool(TOOL_BROKER_RESUME,
+                "Resume background loops after broker_pause.",
+                JSONObject(), emptyList()))
+            .put(tool(TOOL_BROKER_PAUSE_STATUS,
+                "Whether the broker is paused and whether Wi-Fi detection is running.",
+                JSONObject(), emptyList()))
 
         private fun tool(name: String, description: String, props: JSONObject, required: List<String>): JSONObject {
             val schema = JSONObject().put("type", "object").put("properties", props)

@@ -3,7 +3,6 @@ package com.rjkyker.shizukuai.broker.sensing
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.rjkyker.shizukuai.broker.shell.ShellExecutor
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.PI
@@ -15,7 +14,7 @@ import kotlin.math.sqrt
  * Honest Wi-Fi RSSI / link-variance presence-and-motion detector.
  *
  * WHAT THIS IS: it samples the phone's own Wi-Fi link (RSSI, link speed, and — when the OS exposes
- * them via `dumpsys wifi` — noise floor and frame delivery/retry counters) at a high rate, keeps a
+ * them — noise/frame counters are NOT used; Android WifiManager only) at a high rate, keeps a
  * sliding window, and computes variance plus a small discrete Fourier transform. Large, structured
  * fluctuation in the link usually means something near the device moved (a person walking past,
  * a hand near the antenna), so it emits a motion/presence score with a confidence.
@@ -29,6 +28,8 @@ import kotlin.math.sqrt
 object WifiPresenceEngine {
 
     private const val TAG = "WifiPresence"
+    /** 1.8.6+: dumpsys wifi path removed (system_server hang risk). Always true. */
+    const val DUMPSYS_WIFI_DISABLED = true
     private const val SAMPLE_INTERVAL_MS = 200L
     private const val MIN_DURATION_MS = 1_000L
     private const val MAX_DURATION_MS = 30_000L
@@ -40,7 +41,7 @@ object WifiPresenceEngine {
         val rssi: Int,
         val linkSpeed: Int,
         val freq: Int,
-        val noise: Int?,     // dBm, when dumpsys exposes it
+        val noise: Int?,     // unused (kept for schema); always null since 1.8.6
         val txGood: Long?,   // cumulative successful tx frames
         val rxGood: Long?,
         val txBad: Long?     // cumulative tx failures
@@ -107,11 +108,11 @@ object WifiPresenceEngine {
 
         val samples = ArrayList<Sample>()
         val deadline = System.currentTimeMillis() + dur
-        var dumpsysAvailable = false
+        var extraCounters = false
         while (System.currentTimeMillis() < deadline && samples.size < MAX_SAMPLES) {
             val s = sampleOnce(wifi)
             if (s != null) {
-                if (s.noise != null || s.txGood != null) dumpsysAvailable = true
+                if (s.noise != null || s.txGood != null) extraCounters = true
                 samples.add(s)
             }
             try { Thread.sleep(SAMPLE_INTERVAL_MS) } catch (_: InterruptedException) { break }
@@ -164,7 +165,7 @@ object WifiPresenceEngine {
         val presence = motionScore > 0.35
         // Confidence grows with sample count and with how much signal we actually captured.
         val sampleConf = (samples.size / 40.0).coerceIn(0.0, 1.0)
-        val dataConf = if (dumpsysAvailable) 1.0 else 0.7 // less data without dumpsys counters
+        val dataConf = if (extraCounters) 1.0 else 0.7 // RSSI-only is the normal path
         val confidence = (sampleConf * dataConf).coerceIn(0.0, 1.0)
 
         val result = JSONObject()
@@ -178,7 +179,7 @@ object WifiPresenceEngine {
             .put("spectral_peak_ratio", round2(peakRatio))
             .put("frame_fail_delta", txBadDelta)
             .put("frame_good_delta", goodDelta)
-            .put("noise_floor_available", dumpsysAvailable)
+            .put("noise_floor_available", extraCounters)
             .put("motion_score", round2(motionScore))
             .put("presence_detected", presence)
             .put("confidence", round2(confidence))
@@ -193,16 +194,15 @@ object WifiPresenceEngine {
         return try {
             @Suppress("DEPRECATION")
             val info = wifi.connectionInfo ?: return null
-            val dump = readWifiDump()
             Sample(
                 tMs = System.currentTimeMillis(),
                 rssi = info.rssi,
                 linkSpeed = info.linkSpeed,
                 freq = runCatching { info.frequency }.getOrDefault(0),
-                noise = dump?.noise,
-                txGood = dump?.txGood,
-                rxGood = dump?.rxGood,
-                txBad = dump?.txBad
+                noise = null,
+                txGood = null,
+                rxGood = null,
+                txBad = null
             )
         } catch (e: Exception) {
             Log.d(TAG, "sample failed: ${e.message}")
@@ -210,39 +210,7 @@ object WifiPresenceEngine {
         }
     }
 
-    private data class WifiDump(val noise: Int?, val txGood: Long?, val rxGood: Long?, val txBad: Long?)
-
-    /**
-     * Best-effort parse of `dumpsys wifi` for a noise floor and frame counters. Soft-fails (returns
-     * null) when the shell path or the fields are unavailable — RSSI-only mode still works.
-     */
-    private fun readWifiDump(): WifiDump? {
-        return try {
-            val r = ShellExecutor.execSync(
-                "dumpsys wifi 2>/dev/null | grep -iE 'noise|mLastTxGood|mLastRxGood|txBad|tx_bad|rx_good|mTxBad' | head -20",
-                3L
-            )
-            if (r.exitCode != 0 || r.stdout.isBlank()) return null
-            val text = r.stdout
-            WifiDump(
-                noise = Regex("noise[^-0-9]*(-?\\d{2,3})", RegexOption.IGNORE_CASE)
-                    .find(text)?.groupValues?.get(1)?.toIntOrNull(),
-                txGood = longAfter(text, "txgood", "mlasttxgood", "tx_good"),
-                rxGood = longAfter(text, "rxgood", "mlastrxgood", "rx_good"),
-                txBad = longAfter(text, "txbad", "mtxbad", "tx_bad")
-            )
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun longAfter(text: String, vararg keys: String): Long? {
-        for (k in keys) {
-            val m = Regex("$k[^0-9]*(\\d+)", RegexOption.IGNORE_CASE).find(text)
-            if (m != null) return m.groupValues[1].toLongOrNull()
-        }
-        return null
-    }
+    // dumpsys wifi intentionally removed in 1.8.6 — stalled dumpsys hung system_server.
 
     private fun deltaSum(series: List<Long>): Long {
         if (series.size < 2) return 0

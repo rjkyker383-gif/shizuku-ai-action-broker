@@ -68,6 +68,9 @@ object ActionAllowList {
         "wifi_presence_scan" to RiskLevel.LOW,
         // 1.8.5 Wi-Fi detection (default on) + Hotspot / Extender
         "wifi_detection" to RiskLevel.LOW,
+        "broker_pause" to RiskLevel.LOW,
+        "broker_resume" to RiskLevel.LOW,
+        "broker_pause_status" to RiskLevel.LOW,
         "hotspot_status" to RiskLevel.LOW,
         "hotspot_start" to RiskLevel.MEDIUM,
         "hotspot_stop" to RiskLevel.MEDIUM,
