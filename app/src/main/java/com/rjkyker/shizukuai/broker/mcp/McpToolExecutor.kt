@@ -21,6 +21,7 @@ import com.rjkyker.shizukuai.broker.server.ActionRouter
 import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.shell.ShellExecutor
+import com.rjkyker.shizukuai.broker.shell.TermuxShellBridge
 import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import org.json.JSONArray
@@ -95,26 +96,56 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         needConfirm(TOOL_EXEC_SHELL, confirmed)?.let { return it }
         val cmd = args.optString("command", args.optString("cmd", ""))
         if (cmd.isBlank()) return err("exec_shell requires command")
-        val route = args.optString("route", "local").lowercase()
+        val route = args.optString("route", "auto").lowercase()
         val timeout = args.optLong("timeout_sec", 30L).coerceIn(1L, 300L)
 
         return when (route) {
-            "local", "" -> {
-                val r = ShellExecutor.execSync(cmd, timeout)
-                val shizuku = ShizukuGateway.status()
-                JSONObject()
-                    .put("ok", r.exitCode == 0)
-                    .put("exit_code", r.exitCode)
-                    .put("stdout", r.stdout)
-                    .put("stderr", r.stderr)
-                    .put("via", r.via)
-                    .put("timed_out", r.timedOut)
-                    .put("route", "local")
-                    .put("uid", if (r.via == "shizuku_api") shizuku.backendUid else JSONObject.NULL)
+            "auto" -> {
+                // Prefer the Shizuku binder when explicitly granted; otherwise use Termux if
+                // installed and its RUN_COMMAND permission was granted, then legacy local fallback.
+                when {
+                    ShizukuGateway.isReady() -> execLocalShell(cmd, timeout, "shizuku")
+                    TermuxShellBridge.isAvailable(context) -> execTermuxShell(cmd, timeout)
+                    else -> execLocalShell(cmd, timeout, "local")
+                }
             }
+            "shizuku" -> {
+                if (!ShizukuGateway.isReady()) {
+                    err("Shizuku route unavailable: start Shizuku and grant this app Shizuku permission")
+                } else execLocalShell(cmd, timeout, "shizuku")
+            }
+            "local", "" -> execLocalShell(cmd, timeout, "local")
+            "termux" -> execTermuxShell(cmd, timeout)
             "upstream" -> execShellUpstream(cmd, timeout, args)
-            else -> err("exec_shell route must be local|upstream")
+            else -> err("exec_shell route must be auto|shizuku|termux|local|upstream")
         }
+    }
+
+    private fun execLocalShell(cmd: String, timeout: Long, selectedRoute: String): JSONObject {
+        val r = ShellExecutor.execSync(cmd, timeout)
+        val shizuku = ShizukuGateway.status()
+        return JSONObject()
+            .put("ok", r.exitCode == 0)
+            .put("exit_code", r.exitCode)
+            .put("stdout", r.stdout)
+            .put("stderr", r.stderr)
+            .put("via", r.via)
+            .put("timed_out", r.timedOut)
+            .put("route", selectedRoute)
+            .put("uid", if (r.via == "shizuku_api") shizuku.backendUid else JSONObject.NULL)
+    }
+
+    private fun execTermuxShell(cmd: String, timeout: Long): JSONObject {
+        val r = TermuxShellBridge.exec(context, cmd, timeout)
+        return JSONObject()
+            .put("ok", r.exitCode == 0 && !r.timedOut)
+            .put("exit_code", r.exitCode)
+            .put("stdout", r.stdout)
+            .put("stderr", r.stderr)
+            .put("via", r.via)
+            .put("timed_out", r.timedOut)
+            .put("route", "termux")
+            .put("uid", JSONObject.NULL)
     }
 
     private fun execShellUpstream(cmd: String, timeoutSec: Long, args: JSONObject): JSONObject {
@@ -476,12 +507,12 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             .put(
                 tool(
                     TOOL_EXEC_SHELL,
-                    "Run a shell command via Shizuku (local) or relay to upstream exec_shell. " +
-                        "route=local|upstream (default local). Optional short-lived sessions: " +
+                    "Run commands through Shizuku, Termux, or an upstream MCP shell. " +
+                        "route=auto|shizuku|termux|local|upstream (default auto; reports actual backend). Optional short-lived sessions: " +
                         "session_start/session_poll/session_kill (NOT a PTY — capped log buffer, max 3). HIGH: confirm=true.",
                     JSONObject()
                         .put("command", prop("string", "Shell command for sh -c"))
-                        .put("route", enumProp(listOf("local", "upstream")))
+                        .put("route", enumProp(listOf("auto", "shizuku", "termux", "local", "upstream")))
                         .put("timeout_sec", prop("integer", "1-300, default 30"))
                         .put("confirm", prop("boolean", "Must be true for sync/session_start"))
                         .put("session_start", prop("boolean", "Start background session"))

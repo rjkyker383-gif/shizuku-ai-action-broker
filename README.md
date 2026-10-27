@@ -7,6 +7,7 @@ Localhost action broker (127.0.0.1:17999) with:
 - **AccessibilityService** UI automation (tap / swipe / text / ui dump / back / home)
 - **ShizukuGateway** binder status + permission request (Shizuku API)
 - **ShizukuBridge** prefers Shizuku `newProcess` when binder+permission OK; else `rish -c` → `sh -c`
+- **Dual AI shell routes**: `exec_shell` can select `auto`, `shizuku`, `termux`, `local`, or `upstream`; results report the actual backend, exit code, stdout, stderr, and timeout state.
 - **ActionAllowList** / **ActionRequest** structured allow-list (router ops + MVP GET_*)
 - **Delegated Device Admin** (null-admin DPM) via `DelegatedAdminActionHandler`
 - **AdminCliService** / **AdminCliReceiver** for Termux/`rish` helpers
@@ -284,3 +285,20 @@ See also `/workspace/android-bridge/docs/DATAWEDGE.md`.
 | `MainActivity` | Package / server / a11y / Shizuku / scopes status |
 
 Null-admin contract: always call DPM with `admin = null` when scopes are delegated to this package.
+
+
+## AI shell access: Shizuku + Termux
+
+The MCP `exec_shell` tool requires `confirm=true` for command execution. Use `route=auto` to prefer the granted Shizuku binder, then Termux when its external-command permission is available, then the existing local fallback. Use `route=shizuku` or `route=termux` to request a specific backend. Every result reports `via`, `route`, `exit_code`, `stdout`, `stderr`, and `timed_out`; a route is not reported as successful unless the command result says so.
+
+### Termux setup (one-time)
+
+1. Install Termux from a trusted distribution source and open it once.
+2. In Termux, create or edit `~/.termux/termux.properties` and set `allow-external-apps=true`.
+3. Restart Termux.
+4. In Android Settings → Apps → Shizuku AI Action Broker → Permissions, grant **Run commands in Termux environment** if Android exposes it.
+5. Use `exec_shell` with `route=termux` and `confirm=true` to test, for example, `{"command":"id; pwd; echo TERMUX_BRIDGE_OK","route":"termux","confirm":true}`.
+
+If the Termux permission or external-app setting is missing, the bridge returns a setup error rather than silently claiming Termux ran the command. Termux commands run as Termux's app user, not as root. Shizuku commands run with the identity Shizuku provides on that device. Neither route bypasses Android sandbox boundaries automatically.
+
+Only connect a trusted AI client to the broker, keep its bearer token private, and require explicit confirmation for shell execution. Avoid sending secrets in shell command arguments because commands may appear in logs or diagnostic output.
