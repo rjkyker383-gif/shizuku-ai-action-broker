@@ -1,0 +1,31 @@
+{
+  "mode": "simulation-only",
+  "authority": {
+    "allowlist": "../docs/ALLOWLIST.md",
+    "schema": "../schemas/action.schema.json"
+  },
+  "canonicalActions": [
+    "GET_DEVICE_INFO",
+    "GET_PACKAGE_LIST",
+    "GET_CURRENT_APP",
+    "OPEN_APP",
+    "OPEN_SETTINGS",
+    "GET_BATTERY_INFO",
+    "GET_DISPLAY_INFO"
+  ],
+  "fallback": "DENIED",
+  "confirmation": {
+    "requiredForAllowedActions": true,
+    "deniedActionsCannotBeConfirmed": true,
+    "doubleConfirmMustNotDuplicate": true
+  },
+  "invariants": [
+    "unknown_node_denied",
+    "malformed_payload_rejected",
+    "stale_stage_requires_restage",
+    "client_json_cannot_escalate_denied_node",
+    "canonical_action_names_only",
+    "local_log_records_attempt_and_verdict",
+    "no_device_execution_from_lab"
+  ]
+}
