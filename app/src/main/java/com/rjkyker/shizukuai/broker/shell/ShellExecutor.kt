@@ -122,7 +122,7 @@ object ShellExecutor {
         return JSONObject()
             .put("ok", true)
             .put("session_id", id)
-            .put("command", s.command)
+            .put("command_length", s.command.length)
             .put("done", s.done)
             .put("timed_out", s.timedOut)
             .put("exit_code", s.exitCode ?: JSONObject.NULL)
@@ -147,7 +147,7 @@ object ShellExecutor {
             arr.put(
                 JSONObject()
                     .put("session_id", s.id)
-                    .put("command", s.command.take(120))
+                    .put("command_length", s.command.length)
                     .put("done", s.done)
                     .put("exit_code", s.exitCode ?: JSONObject.NULL)
                     .put("elapsed_ms", System.currentTimeMillis() - s.startedAtMs)
