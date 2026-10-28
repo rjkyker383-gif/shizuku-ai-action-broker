@@ -302,3 +302,9 @@ The MCP `exec_shell` tool requires `confirm=true` for command execution. Use `ro
 If the Termux permission or external-app setting is missing, the bridge returns a setup error rather than silently claiming Termux ran the command. Termux commands run as Termux's app user, not as root. Shizuku commands run with the identity Shizuku provides on that device. Neither route bypasses Android sandbox boundaries automatically.
 
 Only connect a trusted AI client to the broker, keep its bearer token private, and require explicit confirmation for shell execution. Avoid sending secrets in shell command arguments because commands may appear in logs or diagnostic output.
+
+### Background shell sessions and diagnostics
+
+- `session_start` accepts the same `route` choice (`auto`, `shizuku`, `termux`, or `local`) as one-shot shell calls. Termux sessions run on the bounded background session worker instead of blocking the request while starting.
+- Shell commands are limited to 64 KiB. Session status reports command length rather than echoing the full command, reducing accidental exposure of embedded secrets in routine status output.
+- Sessions remain capped at three concurrent jobs and collect at most 64 KiB of output per session. They are command jobs, not an interactive terminal/PTY. Killing a session cancels the worker future, but an underlying remote process may continue until its own timeout; verify status rather than assuming immediate process termination.

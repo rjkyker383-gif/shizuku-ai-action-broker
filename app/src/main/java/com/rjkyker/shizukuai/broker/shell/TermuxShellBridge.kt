@@ -27,6 +27,8 @@ object TermuxShellBridge {
     private const val TERMUX_PACKAGE = "com.termux"
     private const val RUN_COMMAND_ACTION = "com.termux.RUN_COMMAND"
     private const val RUN_COMMAND_PATH = "com.termux.RUN_COMMAND_PATH"
+    private const val TERMUX_TIMEOUT_PATH = "/data/data/com.termux/files/usr/bin/timeout"
+    private const val TERMUX_BASH_PATH = "/data/data/com.termux/files/usr/bin/bash"
     private const val RUN_COMMAND_ARGUMENTS = "com.termux.RUN_COMMAND_ARGUMENTS"
     private const val RUN_COMMAND_WORKDIR = "com.termux.RUN_COMMAND_WORKDIR"
     private const val RUN_COMMAND_BACKGROUND = "com.termux.RUN_COMMAND_BACKGROUND"
@@ -72,8 +74,13 @@ object TermuxShellBridge {
         val callback = android.app.PendingIntent.getBroadcast(context, id, callbackIntent, flags)
         val intent = Intent(RUN_COMMAND_ACTION).apply {
             setClassName(TERMUX_PACKAGE, "com.termux.app.RunCommandService")
-            putExtra(RUN_COMMAND_PATH, "/data/data/com.termux/files/usr/bin/bash")
-            putExtra(RUN_COMMAND_ARGUMENTS, arrayOf("-lc", command))
+            // Termux RUN_COMMAND has no cancellation handle after dispatch. Wrap the process
+            // with Termux coreutils timeout so the command itself is terminated on deadline.
+            putExtra(RUN_COMMAND_PATH, TERMUX_TIMEOUT_PATH)
+            putExtra(
+                RUN_COMMAND_ARGUMENTS,
+                arrayOf("--signal=TERM", "--kill-after=2s", "${timeoutSec.coerceIn(1L, 300L)}s", TERMUX_BASH_PATH, "-lc", command)
+            )
             putExtra(RUN_COMMAND_WORKDIR, "/data/data/com.termux/files/home")
             putExtra(RUN_COMMAND_BACKGROUND, true)
             putExtra(RUN_COMMAND_PENDING_INTENT, callback)
@@ -98,34 +105,32 @@ object TermuxShellBridge {
     internal fun complete(intent: Intent) {
         val id = intent.getIntExtra(REQUEST_ID, -1)
         val future = pending[id] ?: return
-        val extras = intent.extras ?: Bundle.EMPTY
-        val resultBundle = extras.keySet().asSequence()
-            .mapNotNull { extras.get(it) as? Bundle }
-            .firstOrNull { b -> b.keySet().any { it.contains("STDOUT") || it.contains("EXIT_CODE") } }
-            ?: extras
-        fun findString(suffix: String): String {
-            val key = resultBundle.keySet().firstOrNull { it.endsWith(suffix) }
-            return key?.let { resultBundle.get(it)?.toString() }.orEmpty()
+
+        // Termux wraps result fields in the "result" Bundle. Keys inside that Bundle are
+        // plain names ("stdout", "stderr", "exitCode", "err", "errmsg"), not constant names.
+        val resultBundle = intent.getBundleExtra("result")
+        if (resultBundle == null) {
+            future.complete(
+                ShellResult(-1, "", "Termux returned no result bundle", "termux")
+            )
+            return
         }
-        fun findInt(suffix: String, fallback: Int): Int {
-            val key = resultBundle.keySet().firstOrNull { it.endsWith(suffix) } ?: return fallback
-            return when (val v = resultBundle.get(key)) {
-                is Number -> v.toInt()
-                is String -> v.toIntOrNull() ?: fallback
-                else -> fallback
-            }
-        }
-        val internalError = findString("EXTRA_PLUGIN_RESULT_BUNDLE_ERRMSG")
-        val errCode = findInt("EXTRA_PLUGIN_RESULT_BUNDLE_ERR", -1)
-        val stdout = findString("EXTRA_PLUGIN_RESULT_BUNDLE_STDOUT").take(MAX_CAPTURE_CHARS)
-        val stderr = findString("EXTRA_PLUGIN_RESULT_BUNDLE_STDERR").take(MAX_CAPTURE_CHARS)
-        val exitCode = findInt("EXTRA_PLUGIN_RESULT_BUNDLE_EXIT_CODE", -1)
+
+        val internalError = resultBundle.getString("errmsg").orEmpty()
+        val errCode = resultBundle.getInt("err", -1)
+        val stdout = resultBundle.getString("stdout").orEmpty().take(MAX_CAPTURE_CHARS)
+        val stderr = resultBundle.getString("stderr").orEmpty().take(MAX_CAPTURE_CHARS)
+        val exitCode = resultBundle.getInt("exitCode", -1)
+
         future.complete(
             ShellResult(
                 exitCode = if (errCode == -1) exitCode else -1,
                 stdout = stdout,
-                stderr = listOf(stderr, internalError.takeIf { it.isNotBlank() }).filterNotNull().joinToString("\n"),
-                via = "termux"
+                stderr = listOf(stderr, internalError.takeIf { it.isNotBlank() })
+                    .filterNotNull()
+                    .joinToString("\n"),
+                via = "termux",
+                timedOut = exitCode == 124 || exitCode == 137
             )
         )
     }
