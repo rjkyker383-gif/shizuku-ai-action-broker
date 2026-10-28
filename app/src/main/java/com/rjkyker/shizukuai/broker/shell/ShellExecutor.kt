@@ -1,8 +1,10 @@
 package com.rjkyker.shizukuai.broker.shell
 
+import android.content.Context
 import android.util.Log
 import com.rjkyker.shizukuai.broker.bridge.ShellResult
 import com.rjkyker.shizukuai.broker.bridge.ShizukuBridge
+import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -46,7 +48,12 @@ object ShellExecutor {
     fun execSync(command: String, timeoutSec: Long = DEFAULT_TIMEOUT_SEC): ShellResult =
         ShizukuBridge.execSeparate(command, timeoutSec.coerceIn(1L, 300L))
 
-    fun startSession(command: String, timeoutSec: Long = DEFAULT_TIMEOUT_SEC): JSONObject {
+    fun startSession(
+        command: String,
+        timeoutSec: Long = DEFAULT_TIMEOUT_SEC,
+        route: String = "auto",
+        context: Context? = null
+    ): JSONObject {
         pruneFinished()
         if (sessions.size >= MAX_SESSIONS) {
             return JSONObject().put("ok", false)
@@ -54,13 +61,36 @@ object ShellExecutor {
                 .put("active", listSessions())
         }
         if (command.isBlank()) return JSONObject().put("ok", false).put("error", "command required")
+        if (command.toByteArray(Charsets.UTF_8).size > 64 * 1024) {
+            return JSONObject().put("ok", false).put("error", "command exceeds 64 KiB limit")
+        }
+        val normalizedRoute = route.lowercase()
+        if (normalizedRoute !in setOf("auto", "shizuku", "termux", "local")) {
+            return JSONObject().put("ok", false).put("error", "session route must be auto|shizuku|termux|local")
+        }
+        if (normalizedRoute == "termux" && context == null) {
+            return JSONObject().put("ok", false).put("error", "Termux session requires app context")
+        }
+        if (normalizedRoute == "shizuku" && !ShizukuGateway.isReady()) {
+            return JSONObject().put("ok", false).put("error", "Shizuku is not ready; start Shizuku and grant permission")
+        }
         val id = UUID.randomUUID().toString().take(8)
         val session = Session(id = id, command = command, startedAtMs = System.currentTimeMillis())
         sessions[id] = session
         val t = timeoutSec.coerceIn(1L, 300L)
         session.future = pool.submit {
             try {
-                val r = ShizukuBridge.execSeparate(command, t)
+                val selected = when (normalizedRoute) {
+                    "termux" -> TermuxShellBridge.exec(context!!, command, t)
+                    "shizuku" -> ShizukuBridge.execSeparate(command, t)
+                    "local" -> ShizukuBridge.execSeparate(command, t)
+                    else -> when {
+                        ShizukuGateway.isReady() -> ShizukuBridge.execSeparate(command, t)
+                        context != null && TermuxShellBridge.isAvailable(context) -> TermuxShellBridge.exec(context, command, t)
+                        else -> ShizukuBridge.execSeparate(command, t)
+                    }
+                }
+                val r = selected
                 synchronized(session.log) {
                     appendCapped(session.log, r.stdout)
                     if (r.stderr.isNotEmpty()) appendCapped(session.log, "\n[stderr]\n${r.stderr}")
@@ -75,10 +105,11 @@ object ShellExecutor {
                 session.done = true
             }
         }
-        Log.i(TAG, "session $id started cmd=${command.take(80)}")
+        Log.i(TAG, "session $id started route=$normalizedRoute")
         return JSONObject().put("ok", true).put("session_id", id)
             .put("note", "Not a PTY — background sh -c collector. Poll with session_poll, stop with session_kill.")
             .put("timeout_sec", t)
+            .put("route", normalizedRoute)
     }
 
     fun pollSession(id: String, consumeLog: Boolean = false): JSONObject {
