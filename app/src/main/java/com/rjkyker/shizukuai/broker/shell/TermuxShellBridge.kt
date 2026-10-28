@@ -27,6 +27,8 @@ object TermuxShellBridge {
     private const val TERMUX_PACKAGE = "com.termux"
     private const val RUN_COMMAND_ACTION = "com.termux.RUN_COMMAND"
     private const val RUN_COMMAND_PATH = "com.termux.RUN_COMMAND_PATH"
+    private const val TERMUX_TIMEOUT_PATH = "/data/data/com.termux/files/usr/bin/timeout"
+    private const val TERMUX_BASH_PATH = "/data/data/com.termux/files/usr/bin/bash"
     private const val RUN_COMMAND_ARGUMENTS = "com.termux.RUN_COMMAND_ARGUMENTS"
     private const val RUN_COMMAND_WORKDIR = "com.termux.RUN_COMMAND_WORKDIR"
     private const val RUN_COMMAND_BACKGROUND = "com.termux.RUN_COMMAND_BACKGROUND"
@@ -72,8 +74,13 @@ object TermuxShellBridge {
         val callback = android.app.PendingIntent.getBroadcast(context, id, callbackIntent, flags)
         val intent = Intent(RUN_COMMAND_ACTION).apply {
             setClassName(TERMUX_PACKAGE, "com.termux.app.RunCommandService")
-            putExtra(RUN_COMMAND_PATH, "/data/data/com.termux/files/usr/bin/bash")
-            putExtra(RUN_COMMAND_ARGUMENTS, arrayOf("-lc", command))
+            // Termux RUN_COMMAND has no cancellation handle after dispatch. Wrap the process
+            // with Termux coreutils timeout so the command itself is terminated on deadline.
+            putExtra(RUN_COMMAND_PATH, TERMUX_TIMEOUT_PATH)
+            putExtra(
+                RUN_COMMAND_ARGUMENTS,
+                arrayOf("--signal=TERM", "--kill-after=2s", "${timeoutSec.coerceIn(1L, 300L)}s", TERMUX_BASH_PATH, "-lc", command)
+            )
             putExtra(RUN_COMMAND_WORKDIR, "/data/data/com.termux/files/home")
             putExtra(RUN_COMMAND_BACKGROUND, true)
             putExtra(RUN_COMMAND_PENDING_INTENT, callback)
