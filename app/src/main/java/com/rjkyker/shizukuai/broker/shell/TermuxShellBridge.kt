@@ -129,7 +129,8 @@ object TermuxShellBridge {
                 stderr = listOf(stderr, internalError.takeIf { it.isNotBlank() })
                     .filterNotNull()
                     .joinToString("\n"),
-                via = "termux"
+                via = "termux",
+                timedOut = exitCode == 124 || exitCode == 137
             )
         )
     }
