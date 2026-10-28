@@ -89,7 +89,12 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             args.optBoolean("session_start", false) || args.optString("op") == "session_start" -> {
                 needConfirm(TOOL_EXEC_SHELL, confirmed)?.let { return it }
                 val cmd = args.optString("command", args.optString("cmd", ""))
-                return ShellExecutor.startSession(cmd, args.optLong("timeout_sec", 30L))
+                return ShellExecutor.startSession(
+                    command = cmd,
+                    timeoutSec = args.optLong("timeout_sec", 30L),
+                    route = args.optString("route", "auto").lowercase(),
+                    context = context.applicationContext
+                )
             }
         }
 
@@ -509,7 +514,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     TOOL_EXEC_SHELL,
                     "Run commands through Shizuku, Termux, or an upstream MCP shell. " +
                         "route=auto|shizuku|termux|local|upstream (default auto; reports actual backend). Optional short-lived sessions: " +
-                        "session_start/session_poll/session_kill (NOT a PTY — capped log buffer, max 3). HIGH: confirm=true.",
+                        "session_start/session_poll/session_kill (NOT a PTY — capped log buffer, max 3; route applies to sessions too). HIGH: confirm=true.",
                     JSONObject()
                         .put("command", prop("string", "Shell command for sh -c"))
                         .put("route", enumProp(listOf("auto", "shizuku", "termux", "local", "upstream")))
