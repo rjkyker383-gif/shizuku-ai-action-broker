@@ -83,6 +83,17 @@ object ActionAllowList {
         "owner_policy" to RiskLevel.MEDIUM,
         "priv_service" to RiskLevel.MEDIUM,
         "client_delegation" to RiskLevel.MEDIUM,
+        // 1.9.0 on-device LLM + autonomy; per-actor gate in autonomy/registry/PermissionEngine
+        "llm_status" to RiskLevel.LOW,
+        "llm_draft" to RiskLevel.LOW,
+        "llm_model" to RiskLevel.MEDIUM,
+        "task_submit" to RiskLevel.MEDIUM,
+        "task_status" to RiskLevel.LOW,
+        "task_cancel" to RiskLevel.LOW,
+        "autonomy_audit" to RiskLevel.LOW,
+        "autonomy_control" to RiskLevel.MEDIUM,
+        "memory_control" to RiskLevel.MEDIUM,
+        "send_request" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

@@ -717,6 +717,12 @@
                         android:layout_height="wrap_content"
                         android:text="@string/owner_probe" />
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/modConsoleButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mod_console" />
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/ownerOpButton"
                         style="@style/CC.Button"
                         android:layout_width="match_parent"
@@ -754,6 +760,83 @@
                         android:layout_marginTop="6dp"
                         android:textIsSelectable="true"
                         android:text="@string/owner_idle" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelAutonomy"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleAutonomy"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_autonomy" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoWritingButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_writing" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoRefreshButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_refresh" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoToggleButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_toggle" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoStopAllButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_stop_all" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoAuditButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_audit" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoMemoryButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_memory" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoSendGateButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_send_gate" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoWatchdogButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/auto_watchdog" />
+                    <TextView
+                        android:id="@+id/autoText"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/auto_idle" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

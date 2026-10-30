@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -11,8 +12,23 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.8.8-dev"
+        versionCode = 19
+        versionName = "1.9.0-dev"
+        // 1.9.0 on-device LLM (llama.cpp JNI). TC22 + modern phones are arm64 only.
+        ndk { abiFilters += listOf("arm64-v8a") }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release")
+                cppFlags += listOf("-std=c++17")
+            }
+        }
+    }
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -63,7 +79,16 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Command-center dashboard lists
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    // 1.9.0 autonomy: durable queue / audit / memory / outbox (Room, additive migrations + exported schema)
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (android.jar's org.json is a throwing stub off-device)
     testImplementation("org.json:json:20240303")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
 }

@@ -109,6 +109,7 @@ class MainActivity : AppCompatActivity() {
             "controls" to binding.panelControls,
             "settings" to binding.panelSettings,
             "owner" to binding.panelOwner,
+            "autonomy" to binding.panelAutonomy,
             "scopes" to binding.panelScopes
         )
     }
@@ -166,7 +167,9 @@ class MainActivity : AppCompatActivity() {
         binding.scanRepairButton.setOnClickListener { repairDataWedge() }
         binding.roamHardenButton.setOnClickListener { roamHarden() }
         ownerPanel = OwnerPanelController(this, binding) { ioSafe(it) }.also { it.setup() }
+        autonomyPanel = AutonomyPanelController(this, binding) { ioSafe(it) }.also { it.setup(); it.refresh() }
         if (intent?.getBooleanExtra("open_delegation", false) == true) ownerPanel?.manageClients()
+        openExtraScreens(intent)
         setupTalk()
         setupHotspot()
         maybeTalkTest(intent)
@@ -210,6 +213,7 @@ class MainActivity : AppCompatActivity() {
             "talk" to R.string.panel_talk,
             "hotspot" to R.string.panel_hotspot,
             "owner" to R.string.panel_owner,
+            "autonomy" to R.string.panel_autonomy,
             "scopes" to R.string.scopes_label
         )
         for ((key, _) in panels) {
@@ -970,10 +974,19 @@ class MainActivity : AppCompatActivity() {
     private fun startTalk() { talk?.start() }
 
     private var ownerPanel: OwnerPanelController? = null
+    private var autonomyPanel: AutonomyPanelController? = null
+
+    /** 1.9.0: launcher-intent shortcuts into the non-exported screens (adb: am start ... --ez open_mod_console true). */
+    private fun openExtraScreens(i: Intent?) {
+        if (i == null) return
+        if (i.getBooleanExtra("open_mod_console", false)) startActivity(Intent(this, com.rjkyker.shizukuai.broker.ui.mod.ModConsoleActivity::class.java))
+        if (i.getBooleanExtra("open_writing", false)) startActivity(Intent(this, WritingAssistantActivity::class.java))
+    }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra("open_delegation", false)) ownerPanel?.manageClients()
+        openExtraScreens(intent)
         maybeTalkTest(intent)
     }
 

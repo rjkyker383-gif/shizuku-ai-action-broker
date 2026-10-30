@@ -23,6 +23,9 @@ class OwnerPanelController(
 ) {
     fun setup() {
         b.ownerProbeButton.setOnClickListener { runOp("probe", JSONObject()) }
+        b.modConsoleButton.setOnClickListener {
+            act.startActivity(android.content.Intent(act, com.rjkyker.shizukuai.broker.ui.mod.ModConsoleActivity::class.java))
+        }
         b.ownerOpButton.setOnClickListener { pickOp() }
         b.privStartButton.setOnClickListener { io { show(PrivServiceClient.start(act.applicationContext)) } }
         b.privStopButton.setOnClickListener { io { show(PrivServiceClient.stop()) } }
@@ -57,26 +60,7 @@ class OwnerPanelController(
             .setNegativeButton("Cancel", null).show()
     }
 
-    private fun template(op: String): String = when (op) {
-        "app_info", "enable_system_app", "install_existing", "clear_app_storage", "default_dialer" -> """{"package":""}"""
-        "hide", "suspend", "metered_data", "user_control", "block_uninstall" -> """{"package":"","value":true}"""
-        "permission" -> """{"package":"","permission":"android.permission.CAMERA","state":"granted"}"""
-        "restriction" -> """{"restriction":"no_config_bluetooth","value":true}"""
-        "lockout_restriction" -> """{"restriction":"no_debugging_features","value":false}"""
-        "lock_screen_info", "organization_name", "support_message" -> """{"text":""}"""
-        "permission_policy" -> """{"policy":"prompt"}"""
-        "system_update_policy" -> """{"policy":"postpone"}"""
-        "private_dns" -> """{"mode":"opportunistic"}"""
-        "global_proxy" -> """{"host":"","port":8080}"""
-        "max_time_to_lock" -> """{"ms":0}"""
-        "keyguard_features" -> """{"flags":0}"""
-        "delegate_scopes" -> """{"package":"","scopes":["delegation-package-access"]}"""
-        "lock_task_packages", "permitted_accessibility", "permitted_input_methods" -> """{"packages":[]}"""
-        "always_on_vpn" -> """{"package":"","lockdown":false}"""
-        "probe", "features", "restrictions", "lock_task_get", "system_update_get", "network_get",
-        "password_info", "users", "delegates_get", "lock_now", "reboot" -> "{}"
-        else -> """{"value":true}"""
-    }
+    private fun template(op: String): String = ownerArgTemplate(op)
 
     private fun editArgs(op: String) {
         val tier = OwnerPolicyCatalog.OPS[op] ?: return
@@ -135,4 +119,26 @@ class OwnerPanelController(
             .setNegativeButton("Deny") { _, _ -> io { reg.deny(c.pkg, System.currentTimeMillis()); show(reg.toJson()) } }
             .show()
     }
+}
+
+/** Starter JSON args per owner_policy op (shared by the dashboard panel and the 1.9.0 Mod Console). */
+fun ownerArgTemplate(op: String): String = when (op) {
+    "app_info", "enable_system_app", "install_existing", "clear_app_storage", "default_dialer" -> """{"package":""}"""
+    "hide", "suspend", "metered_data", "user_control", "block_uninstall" -> """{"package":"","value":true}"""
+    "permission" -> """{"package":"","permission":"android.permission.CAMERA","state":"granted"}"""
+    "restriction" -> """{"restriction":"no_config_bluetooth","value":true}"""
+    "lockout_restriction" -> """{"restriction":"no_debugging_features","value":false}"""
+    "lock_screen_info", "organization_name", "support_message" -> """{"text":""}"""
+    "permission_policy" -> """{"policy":"prompt"}"""
+    "system_update_policy" -> """{"policy":"postpone"}"""
+    "private_dns" -> """{"mode":"opportunistic"}"""
+    "global_proxy" -> """{"host":"","port":8080}"""
+    "max_time_to_lock" -> """{"ms":0}"""
+    "keyguard_features" -> """{"flags":0}"""
+    "delegate_scopes" -> """{"package":"","scopes":["delegation-package-access"]}"""
+    "lock_task_packages", "permitted_accessibility", "permitted_input_methods" -> """{"packages":[]}"""
+    "always_on_vpn" -> """{"package":"","lockdown":false}"""
+    "probe", "features", "restrictions", "lock_task_get", "system_update_get", "network_get",
+    "password_info", "users", "delegates_get", "lock_now", "reboot" -> "{}"
+    else -> """{"value":true}"""
 }
