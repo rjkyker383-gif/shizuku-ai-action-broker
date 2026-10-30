@@ -39,6 +39,7 @@
         "datawedge_last",
         "datawedge_query",
         "datawedge_results",
+        "scan_history",
         "dhizuku_status",
         "dhizuku_connect",
         "dhizuku_scopes",
@@ -68,7 +69,24 @@
         "discovery_info",
         "zebra_wifi_config",
         "zebra_datawedge_profile",
-        "zebra_scanner_control"
+        "zebra_scanner_control",
+        "owner_policy",
+        "priv_service",
+        "client_delegation",
+        "a11y_click_text",
+        "a11y_global",
+        "a11y_screenshot",
+        "a11y_swipe",
+        "a11y_tap",
+        "a11y_text",
+        "a11y_ui_tree",
+        "broker_pause",
+        "broker_pause_status",
+        "broker_resume",
+        "hotspot_start",
+        "hotspot_status",
+        "hotspot_stop",
+        "wifi_detection"
       ]
     },
     "reason": {

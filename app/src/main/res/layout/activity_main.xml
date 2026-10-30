@@ -693,6 +693,71 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/panelOwner"
+                style="@style/CC.Panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/titleOwner"
+                        style="@style/CC.PanelTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:tag="accent"
+                        android:text="@string/panel_owner" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/ownerProbeButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/owner_probe" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/ownerOpButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/owner_run_op" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/privStartButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/priv_start" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/privAdbButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/priv_copy_adb" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/privStopButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/priv_stop" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/delegationButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/delegation_manage" />
+                    <TextView
+                        android:id="@+id/ownerText"
+                        style="@style/CC.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textIsSelectable="true"
+                        android:text="@string/owner_idle" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/panelScopes"
                 style="@style/CC.Panel"
                 android:layout_width="match_parent"
