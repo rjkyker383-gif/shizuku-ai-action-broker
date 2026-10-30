@@ -10,8 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -20,8 +20,12 @@ import com.rjkyker.shizukuai.broker.airtable.AirtableSyncWorker
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.mcp.UpstreamMcpRelayClient
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import android.provider.Settings
+import com.rjkyker.shizukuai.broker.discovery.NsdAdvertiser
 import com.rjkyker.shizukuai.broker.server.BrokerServer
+import com.rjkyker.shizukuai.broker.net.RoamKeeper
 import com.rjkyker.shizukuai.broker.ui.MainActivity
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import rikka.shizuku.Shizuku
@@ -36,7 +40,9 @@ import rikka.shizuku.Shizuku
  */
 class BrokerService : Service() {
 
-    private val handler = Handler(Looper.getMainLooper())
+    // 1.8.6: watchdog runs on a background HandlerThread (never the main UI thread).
+    private val watchdogThread = HandlerThread("broker-watchdog").also { it.start() }
+    private val handler = Handler(watchdogThread.looper)
     private var bindersRegistered = false
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
@@ -59,6 +65,12 @@ class BrokerService : Service() {
         override fun run() {
             try {
                 ensureServer()
+                if (BrokerPause.isPaused(applicationContext)) {
+                    // Keep MCP alive; do not restart background loops while paused.
+                    return
+                }
+                // Cheap: rebind if the Tailscale IP appeared/changed without a network callback.
+                runCatching { BrokerServer.get()?.rebindIfNeeded() }
                 // Re-init Dhizuku if it was installed but the binder went away after a reboot.
                 if (DhizukuGateway.isInstalled(applicationContext) && !DhizukuGateway.isGranted()) {
                     runCatching { DhizukuGateway.init(applicationContext) }
@@ -68,6 +80,9 @@ class BrokerService : Service() {
                         runCatching { DhizukuGateway.reconnect(applicationContext) }
                     }
                 }
+                // Re-assert our accessibility service if it was disabled (Dhizuku/Shizuku settings write).
+                reassertAccessibility()
+                runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
             } catch (e: Exception) {
                 Log.w(TAG, "watchdog: ${e.message}")
             } finally {
@@ -81,9 +96,20 @@ class BrokerService : Service() {
     override fun onCreate() {
         super.onCreate()
         SecurePrefs.ensureMcpToken(applicationContext)
+        SecurePrefs.seedDefaultUrls(applicationContext)
         registerBinders()
+        // mDNS/DNS-SD advertisement (_mcp._tcp + _broker._tcp) so LAN AIs can find /discover.
+        runCatching { NsdAdvertiser.register(applicationContext) }
         // Periodic Airtable telemetry flush (no-ops until an API key is set in the app).
         runCatching { AirtableSyncWorker.schedulePeriodic(applicationContext) }
+        // Roam-proof: rebind on Tailscale IP change, re-register mDNS, wireless-debug + Tailscale nudge.
+        runCatching { RoamKeeper.start(applicationContext) }
+        DataWedgeResultReceiver.ensureRegistered(applicationContext)
+        autoRepairDataWedgeOnce()
+        // 1.8.5+: Wi-Fi detection default ON; skip start when Pause is on.
+        if (!BrokerPause.isPaused(applicationContext)) {
+            runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.start(applicationContext) }
+        }
         handler.postDelayed(watchdog, WATCHDOG_MS)
     }
 
@@ -97,6 +123,50 @@ class BrokerService : Service() {
         ensureServer()
         registerBinders()
         return START_STICKY
+    }
+
+
+    /**
+     * If our accessibility component is missing from enabled_accessibility_services, put it back
+     * via Settings.Secure (works when we hold WRITE_SECURE_SETTINGS via Dhizuku/Shizuku). Soft-fail.
+     */
+    private fun reassertAccessibility() {
+        try {
+            if (AgentAccessibilityService.isEnabled()) return
+            val cr = applicationContext.contentResolver
+            val component = "${packageName}/.accessibility.AgentAccessibilityService"
+            val cur = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+            if (cur.split(':').any { it.equals(component, ignoreCase = true) }) {
+                // Listed but service not bound yet — just ensure master switch is on
+                Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                return
+            }
+            val next = if (cur.isBlank()) component else "$cur:$component"
+            Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next)
+            Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            Log.i(TAG, "watchdog re-asserted accessibility service")
+        } catch (e: Exception) {
+            Log.w(TAG, "reassertAccessibility: ${e.message}")
+        }
+    }
+
+    /**
+     * Scans weren't landing because DataWedge only used the broker profile while the broker was in the
+     * foreground (and the profile was never created unless an AI called set_config). Apply the repair
+     * plan once per install/upgrade on Zebra devices; the Repair button re-applies it any time.
+     */
+    private fun autoRepairDataWedgeOnce() {
+        try {
+            val installed = runCatching { packageManager.getPackageInfo("com.symbol.datawedge", 0); true }.getOrDefault(false)
+            if (!installed) return
+            val prefs = getSharedPreferences("broker_dw_repair", MODE_PRIVATE)
+            val vc = runCatching { packageManager.getPackageInfo(packageName, 0).longVersionCode }.getOrDefault(0L)
+            if (prefs.getLong("applied_version", -1L) == vc) return
+            com.rjkyker.shizukuai.broker.datawedge.DataWedgeRepair.apply(applicationContext)
+            prefs.edit().putLong("applied_version", vc).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "autoRepairDataWedgeOnce: ${e.message}")
+        }
     }
 
     private fun ensureServer() {
@@ -150,6 +220,7 @@ class BrokerService : Service() {
         val status = buildString {
             append("MCP :${BrokerServer.PORT}")
             append(" · sticky")
+            if (BrokerPause.isPaused(this@BrokerService)) append(" · PAUSED")
             if (upHost.isNotEmpty()) append(" · up→").append(upHost) else append(" · up unset")
             if (shizuku != null) {
                 append(if (shizuku.binderAlive && shizuku.permissionGranted) " · Shizuku OK" else " · Shizuku …")
@@ -160,8 +231,8 @@ class BrokerService : Service() {
             .setContentTitle("Shizuku AI Broker")
             .setContentText(status)
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                "Local MCP on 127.0.0.1:${BrokerServer.PORT}\n" +
-                    "POST /mcp · GET /ws · POST /action · GET /health\n" +
+                "MCP :${BrokerServer.PORT} on ${BrokerServer.get()?.boundAddresses?.joinToString(" + ") ?: "127.0.0.1"}\n" +
+                    "POST /mcp · GET /ws · POST /action · GET /health · GET /discover\n" +
                     "Upstream: ${if (upHost.isEmpty()) "(not configured — set in app)" else upHost}\n" +
                     "Auth required (Bearer token). Boot-persistent."
             ))
@@ -173,6 +244,7 @@ class BrokerService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(watchdog)
+        runCatching { watchdogThread.quitSafely() }
         if (bindersRegistered) {
             try {
                 Shizuku.removeBinderReceivedListener(binderReceivedListener)
@@ -181,6 +253,9 @@ class BrokerService : Service() {
             }
             bindersRegistered = false
         }
+        runCatching { NsdAdvertiser.unregister(applicationContext) }
+        runCatching { RoamKeeper.stop(applicationContext) }
+        runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stop() }
         BrokerServer.get()?.stop()
         super.onDestroy()
     }

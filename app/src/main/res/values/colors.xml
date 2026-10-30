@@ -7,4 +7,28 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Command-center palette (high-contrast dark, readable) -->
+    <color name="cc_bg">#FF070B12</color>
+    <color name="cc_header">#FF0B1220</color>
+    <color name="cc_panel">#FF0F1724</color>
+    <color name="cc_panel_stroke">#FF1E2A3B</color>
+    <color name="cc_row">#FF131D2C</color>
+    <color name="cc_text">#FFE6EDF3</color>
+    <color name="cc_text_dim">#FF8B98A9</color>
+    <color name="cc_input_bg">#FF0A111C</color>
+
+    <!-- Status LEDs -->
+    <color name="led_ok">#FF22C55E</color>
+    <color name="led_warn">#FFF59E0B</color>
+    <color name="led_bad">#FFEF4444</color>
+    <color name="led_info">#FF38BDF8</color>
+    <color name="led_off">#FF4B5563</color>
+
+    <!-- Selectable accents -->
+    <color name="accent_cyan">#FF22D3EE</color>
+    <color name="accent_amber">#FFFBBF24</color>
+    <color name="accent_magenta">#FFE879F9</color>
+    <color name="accent_green">#FF4ADE80</color>
+    <color name="accent_red">#FFF87171</color>
 </resources>

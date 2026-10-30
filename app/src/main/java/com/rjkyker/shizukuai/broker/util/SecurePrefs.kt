@@ -21,14 +21,25 @@ object SecurePrefs {
     private const val KEY_AIRTABLE_API_KEY = "airtable_api_key"
     private const val KEY_BRIDGE_URL_PREFIX = "bridge_url_"
     private const val KEY_BRIDGE_TOKEN_PREFIX = "bridge_token_"
-    val BRIDGE_NAMES = listOf("magic", "war", "ether")
+    private const val KEY_MESH_BASE_URL = "mesh_base_url"
+    val BRIDGE_NAMES = listOf("android", "spark", "ether", "war", "magic", "muse")
 
     /**
-     * Built-in upstream default. Intentionally empty: no any-network (ngrok / Cloudflare tunnel /
-     * Tailscale) URL for the 8486 node is documented in the repo, and a 192.168.x.x LAN address
-     * only works on the home Wi-Fi. Set the URL in MainActivity or via setUpstreamMcpUrl.
+     * Built-in, non-secret public mesh host (RJ's permanent ngrok domain). Every bridge is a path on
+     * it: /android/mcp /spark/mcp /ether/mcp /war/mcp /magic/mcp /muse/mcp. These are connection URLs only —
+     * NO token or key is ever baked in; bridge/upstream tokens stay blank until set in the app.
+     * All defaults are editable/overridable in the UI; saving a blank value restores the default.
      */
-    const val DEFAULT_UPSTREAM_MCP_URL = ""
+    const val DEFAULT_MESH_BASE_URL = "https://presocial-endocrinopathic-fumiko.ngrok-free.dev"
+
+    /** Built-in upstream default: the android bridge on the public mesh (any network). */
+    const val DEFAULT_UPSTREAM_MCP_URL = "$DEFAULT_MESH_BASE_URL/android/mcp"
+
+    /** Built-in default MCP URL for a bridge on the mesh base (empty for unknown names). */
+    fun defaultBridgeUrl(name: String, base: String = DEFAULT_MESH_BASE_URL): String {
+        val n = name.trim().lowercase()
+        return if (n in BRIDGE_NAMES) "${base.trimEnd('/')}/$n/mcp" else ""
+    }
 
     /** Example LAN-only address (home Wi-Fi). Suitable only as the optional LAN fallback. */
     const val EXAMPLE_LAN_UPSTREAM_URL = "http://192.168.1.158:8486/mcp"
@@ -86,11 +97,15 @@ object SecurePrefs {
         return ensureMcpToken(context)
     }
 
-    /** Primary upstream MCP URL (any network: https tunnel or Tailscale 100.x). Empty = not configured. */
+    /**
+     * Primary upstream MCP URL (any network). Prefilled: falls back to `<mesh base>/android/mcp`
+     * (built-in default [DEFAULT_UPSTREAM_MCP_URL]) when the user has not overridden it.
+     */
     fun getUpstreamMcpUrl(context: Context): String =
-        get(context).getString(KEY_UPSTREAM_URL, "").orEmpty().trim().ifBlank { DEFAULT_UPSTREAM_MCP_URL }
+        get(context).getString(KEY_UPSTREAM_URL, "").orEmpty().trim()
+            .ifBlank { defaultBridgeUrl("android", getMeshBaseUrl(context)) }
 
-    /** Blank clears it. Only http/https URLs are accepted. */
+    /** Blank restores the built-in default. Only http/https URLs are accepted. */
     fun setUpstreamMcpUrl(context: Context, value: String) {
         val v = validateUrl(value)
         get(context).edit().putString(KEY_UPSTREAM_URL, v).apply()
@@ -135,10 +150,42 @@ object SecurePrefs {
 
     private fun normalizeBridge(name: String): String = name.trim().lowercase()
 
-    /** Per-bridge MCP URL (magic|war|ether). Empty until set; nothing is hardcoded. */
+    /**
+     * Per-bridge MCP URL (android|spark|ether|war|magic). Falls back to the built-in mesh default
+     * (`<mesh base>/<name>/mcp`) when the user has not overridden it.
+     */
     fun getBridgeUrl(context: Context, name: String): String =
         get(context).getString(KEY_BRIDGE_URL_PREFIX + normalizeBridge(name), "").orEmpty().trim()
+            .ifBlank { defaultBridgeUrl(name, getMeshBaseUrl(context)) }
 
+    /** Public mesh base URL (scheme+host, no path). Defaults to [DEFAULT_MESH_BASE_URL]. */
+    fun getMeshBaseUrl(context: Context): String =
+        get(context).getString(KEY_MESH_BASE_URL, "").orEmpty().trim().trimEnd('/')
+            .ifBlank { DEFAULT_MESH_BASE_URL }
+
+    /** Blank restores the built-in default. Only http/https accepted. */
+    fun setMeshBaseUrl(context: Context, value: String) {
+        get(context).edit().putString(KEY_MESH_BASE_URL, validateUrl(value).trimEnd('/')).apply()
+    }
+
+    /**
+     * First-run seeding of the built-in, non-secret mesh base URL. Upstream and per-bridge URLs are
+     * derived from it at read time (so every settings field is prefilled on first launch, and
+     * editing the mesh base moves all un-overridden bridges with it). Never writes tokens/keys and
+     * never overwrites a user value.
+     */
+    fun seedDefaultUrls(context: Context) {
+        val p = get(context)
+        if (p.getString(KEY_MESH_BASE_URL, "").isNullOrBlank()) {
+            p.edit().putString(KEY_MESH_BASE_URL, DEFAULT_MESH_BASE_URL).apply()
+        }
+    }
+
+    /** True when the bridge URL is the user's own override (not the built-in mesh default). */
+    fun isBridgeOverridden(context: Context, name: String): Boolean =
+        get(context).getString(KEY_BRIDGE_URL_PREFIX + normalizeBridge(name), "").orEmpty().isNotBlank()
+
+    /** Blank restores the built-in mesh default for that bridge. Only http/https accepted. */
     fun setBridgeUrl(context: Context, name: String, value: String) {
         get(context).edit().putString(KEY_BRIDGE_URL_PREFIX + normalizeBridge(name), validateUrl(value)).apply()
     }

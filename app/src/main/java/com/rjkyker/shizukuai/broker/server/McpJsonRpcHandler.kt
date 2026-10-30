@@ -88,7 +88,8 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
             .put(
                 "instructions",
                 "On-device broker for Shizuku shell, Accessibility UI control, Dhizuku device-owner policy " +
-                    "Zebra DataWedge and no-license Zebra Wi-Fi/scanner control, a bridge mesh relay (magic/war/ether/upstream), Airtable telemetry, and an honest Wi-Fi RSSI presence sensor (not through-wall). HIGH-risk tools (exec_shell, perm, set_scopes, zebra_wifi_config) need confirm=true."
+                    "Zebra DataWedge and no-license Zebra Wi-Fi/scanner control, a bridge mesh relay (magic/war/ether/upstream), Airtable telemetry, and an honest Wi-Fi RSSI presence sensor (not through-wall). HIGH-risk tools (exec_shell, perm, set_scopes, zebra_wifi_config) need confirm=true. " +
+                    "discovery_info returns the connection manifest (also open at GET /discover)."
             )
     }
 
@@ -99,6 +100,17 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val r = tools.call(name, args, confirmHeader)
         val isError = !r.optBoolean("ok", false)
+        val img = r.optString("image_base64", "")
+        if (img.isNotEmpty()) {
+            // Screenshot: text summary without the blob + a real MCP image item; structuredContent keeps the base64.
+            val summary = JSONObject(r.toString()).apply { remove("image_base64") }
+            return JSONObject()
+                .put("content", JSONArray()
+                    .put(JSONObject().put("type", "text").put("text", summary.toString()))
+                    .put(JSONObject().put("type", "image").put("data", img).put("mimeType", r.optString("mime", "image/png"))))
+                .put("structuredContent", r)
+                .put("isError", isError)
+        }
         return JSONObject()
             .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", r.toString())))
             .put("structuredContent", r)
@@ -115,7 +127,7 @@ class McpJsonRpcHandler(private val tools: McpToolExecutor) {
     companion object {
         private const val TAG = "McpJsonRpc"
         const val SERVER_NAME = "shizuku-ai-action-broker"
-        const val SERVER_VERSION = "1.7.0-dev"
+        const val SERVER_VERSION = "1.8.4-dev"
         const val DEFAULT_PROTOCOL_VERSION = "2024-11-05"
         val SUPPORTED_PROTOCOL_VERSIONS = setOf("2024-11-05", "2025-03-26", "2025-06-18")
 

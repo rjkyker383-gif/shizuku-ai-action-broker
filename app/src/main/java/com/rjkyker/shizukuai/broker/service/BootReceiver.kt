@@ -27,6 +27,12 @@ class BootReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Log.w(TAG, "BrokerService.start failed: ${e.message}")
                 }
+                // Roam-proof recovery (rebind Tailscale IP, mDNS, Tailscale CONNECT_VPN, Doze allowlist).
+                try {
+                    com.rjkyker.shizukuai.broker.net.RoamKeeper.schedule(context, action.substringAfterLast('.'))
+                } catch (e: Exception) {
+                    Log.w(TAG, "RoamKeeper failed: ${e.message}")
+                }
                 try {
                     SecureSettingsKeepalive.reenableAdbAndDevSettings(context.applicationContext)
                 } catch (e: Exception) {

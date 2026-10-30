@@ -2,9 +2,9 @@
 <resources>
     <string name="app_name">Shizuku AI Broker</string>
     <string name="main_title">Shizuku AI Action Broker</string>
-    <string name="main_subtitle">Localhost broker + delegated admin + accessibility</string>
+    <string name="main_subtitle">MCP node · 127.0.0.1:17999 · bearer auth</string>
     <string name="scopes_label">Active delegated scopes</string>
-    <string name="refresh_scopes">Refresh status</string>
+    <string name="refresh_scopes">Refresh</string>
     <string name="open_accessibility">Open accessibility settings</string>
     <string name="request_shizuku">Request Shizuku permission</string>
     <string name="no_scopes">No delegated scopes (Dhizuku not installed, no device-owner delegation)</string>
@@ -26,14 +26,62 @@
     <string name="battery_exemption">Ignore battery optimizations</string>
     <string name="mcp_hint">POST http://127.0.0.1:17999/mcp with Authorization: Bearer &lt;token&gt;</string>
     <string name="upstream_url_label">Upstream MCP URL (any wifi)</string>
-    <string name="upstream_url_hint">https://…tunnel or http://100.x.x.x:8486/mcp — not 192.168 for primary</string>
+    <string name="upstream_url_hint">blank = built-in default (mesh base + /android/mcp)</string>
     <string name="save_upstream">Save upstream URL</string>
     <string name="upstream_lan_fallback_label">LAN fallback (optional, home Wi-Fi only)</string>
     <string name="airtable_key_label">Airtable API key (stored encrypted)</string>
     <string name="airtable_key_hint">pat… / key…  (read at runtime, never hardcoded)</string>
     <string name="save_airtable">Save Airtable key</string>
     <string name="airtable_key_set">Airtable key: set (hidden)</string>
-    <string name="bridge_urls_label">Bridge URLs (magic/war/ether)</string>
-    <string name="bridge_urls_hint">magic=https://…,war=https://…,ether=https://…</string>
+    <string name="bridge_urls_label">Bridge URLs (android/spark/ether/war/magic)</string>
+    <string name="bridge_urls_hint">android=https://…,spark=…  (blank value = built-in default)</string>
     <string name="save_bridges">Save bridge URLs</string>
+
+    <!-- 1.8.0 command center -->
+    <string name="cc_title">SHIZUKU BROKER // COMMAND</string>
+    <string name="panel_systems">◉ Systems</string>
+    <string name="panel_mesh">◈ Bridge mesh</string>
+    <string name="panel_connections">⇄ Connections &amp; discovery</string>
+    <string name="panel_security">⚿ Security</string>
+    <string name="panel_controls">▶ Controls</string>
+    <string name="panel_settings">⚙ Settings</string>
+    <string name="panel_customize">✎ Customize</string>
+    <string name="panel_scans">▣ SCAN OUTPUT</string>
+    <string name="scans_empty">No scans yet — trigger the imager or send a test intent.</string>
+    <string name="scan_copy">Copy detail</string>
+    <string name="scan_clear">Clear</string>
+    <string name="customize_panels">Show panels</string>
+    <string name="customize_accent">Accent color</string>
+    <string name="copy">COPY</string>
+    <string name="copied">Copied: %1$s</string>
+    <string name="probe_bridges">Probe bridges now</string>
+    <string name="mesh_not_probed">Not probed yet. Probes GET …/&lt;bridge&gt;/health (no tool calls).</string>
+    <string name="mesh_probing">Probing bridges…</string>
+    <string name="mesh_probed_at">Last probe: %1$s</string>
+    <string name="connections_hint">Open manifest: GET /discover or /.well-known/mcp.json (no auth, no secrets). mDNS: _mcp._tcp + _broker._tcp. Calling tools still needs the bearer token.</string>
+    <string name="security_note">The token is stored encrypted on-device and never appears in /health, /discover or logs. Rotating shows the new token once.</string>
+    <string name="settings_note">Connection URLs ship prefilled with the built-in public mesh defaults. Edit to override; save a blank field to restore the default. Tokens and the Airtable key are never built in.</string>
+    <string name="mesh_base_label">Mesh base URL (all bridges live under it)</string>
+    <string name="mesh_base_hint">https://presocial-endocrinopathic-fumiko.ngrok-free.dev</string>
+    <string name="save_mesh_base">Save mesh base</string>
+    <string name="rotate_confirm_title">Rotate MCP token?</string>
+    <string name="rotate_confirm_msg">Any Termux scripts or MCP clients using the old token stop working until you update them. The new token is shown once and copied to the clipboard.</string>
+    <string name="panel_talk">◉ TALK · LIVE AGENT</string>
+    <string name="talk_start">🎙 TALK</string>
+    <string name="talk_stop">■ STOP</string>
+    <string name="talk_idle">Mic off. Tap TALK and speak — it answers out loud and keeps listening until you tap STOP or say “stop”.</string>
+    <string name="talk_voice_loading">Voice: loading…</string>
+    <string name="talk_note">Quick on-phone answers (status, “what does my last scan mean”) are instant. Everything else goes to Muse through your own ngrok host, and Muse answers out loud in its own natural male voice (Static by default; tap the voice button to pick Jordan, Morgan, Bubba, Prophet or Ronan) as an MP3. If no Muse audio arrives within 60 s, the phone reads the reply with its best male device voice instead. The mic is only on during a session. It never texts, emails, calls, or spends.</string>
+    <string name="talk_mic_denied">Microphone permission is needed for Talk.</string>
+    <string name="repair_datawedge">Repair DataWedge profile (scans → this app, all apps)</string>
+    <string name="roam_harden">Roam-proof setup (Tailscale always-on + Doze allowlist)</string>
+    <string name="scans_hint">Tap a scan below to show it. “What this means” explains each field in plain English; raw/hidden bytes follow.</string>
+    <string name="panel_hotspot">◉ HOTSPOT · EXTENDER · WI-FI DETECTION</string>
+    <string name="hotspot_start">Start hotspot</string>
+    <string name="hotspot_stop">Stop hotspot</string>
+    <string name="hotspot_show_pass">Show hotspot password</string>
+    <string name="hotspot_idle">Hotspot: tap Refresh or Start to read status…</string>
+    <string name="broker_pause_label">Pause broker (stop background loops; MCP stays up)</string>
+    <string name="wifi_detection_label">Wi-Fi detection (nearby AP signal + presence)</string>
+    <string name="hotspot_note">Shares this phone\'s internet as "TC22-Extender" (WPA2, password made on this phone). If the phone can keep Wi-Fi and the hotspot on together it repeats your Wi-Fi; otherwise it shares mobile data. It can\'t boost other phones\' radios. It helps when the TC22 is placed where the signal is stronger. Wi-Fi detection only measures signal strength at this phone: no through-wall view, no tracking of people.</string>
 </resources>

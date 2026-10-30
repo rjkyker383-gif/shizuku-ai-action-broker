@@ -12,17 +12,32 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- mDNS / NSD advertisement of _mcp._tcp + _broker._tcp -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Required to read connected-AP RSSI/SSID on Q+ for the presence sensor -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 1.8.5 Hotspot / Extender: LocalOnlyHotspot fallback on Android 13+ -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <!-- Privileged: grant via pm grant / device-owner; used by BootReceiver keepalive -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <!-- Dhizuku (device-owner sharing): makes the broker show up in Dhizuku's app list -->
     <uses-permission android:name="com.rosan.dhizuku.permission.API" />
+    <!-- Talk panel: mic is used only while a Talk session is active (runtime permission) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.rosan.dhizuku" />
+        <package android:name="com.tailscale.ipn" />
+        <package android:name="com.symbol.datawedge" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -46,6 +61,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.ShizukuAiBroker">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

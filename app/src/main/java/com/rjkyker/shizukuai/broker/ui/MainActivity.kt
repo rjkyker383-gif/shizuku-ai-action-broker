@@ -3,48 +3,114 @@ package com.rjkyker.shizukuai.broker.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.checkbox.MaterialCheckBox
+import com.google.android.material.chip.Chip
 import com.rjkyker.shizukuai.broker.R
 import com.rjkyker.shizukuai.broker.accessibility.AgentAccessibilityService
 import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.PermissionRequestResult
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.databinding.ActivityMainBinding
+import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeResultReceiver
+import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
+import com.rjkyker.shizukuai.broker.datawedge.ScanParsers
+import com.rjkyker.shizukuai.broker.datawedge.ScanExplainer
+import com.rjkyker.shizukuai.broker.datawedge.DataWedgeRepair
+import com.rjkyker.shizukuai.broker.net.NetInfo
+import com.rjkyker.shizukuai.broker.voice.LocalAgent
+import com.rjkyker.shizukuai.broker.voice.MuseVoiceClient
+import com.rjkyker.shizukuai.broker.voice.TalkController
+import com.rjkyker.shizukuai.broker.net.RoamKeeper
+import com.rjkyker.shizukuai.broker.service.BrokerPause
+import org.json.JSONObject
+import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import com.rjkyker.shizukuai.broker.discovery.BrokerStatusSnapshot
+import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
+import com.rjkyker.shizukuai.broker.discovery.NsdAdvertiser
+import com.rjkyker.shizukuai.broker.mcp.BridgeMeshRelay
+import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
 import com.rjkyker.shizukuai.broker.server.BrokerServer
 import com.rjkyker.shizukuai.broker.service.BrokerService
-import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
-import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import rikka.shizuku.Shizuku
+import java.text.DateFormat
+import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Command-center dashboard. Every panel is bound to real broker state:
+ * Systems (server/Shizuku/Dhizuku/a11y/upstream/Airtable/Wi-Fi engine/mDNS/app), Bridge mesh
+ * (live GET …/health probes), Connections (from the same discovery manifest served at /discover),
+ * Security (token reveal / rotate), Controls, Settings (prefilled URLs, Airtable key), Customize.
+ */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var admin: DelegatedAdminActionHandler
     private var tokenVisible = false
 
-    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-        runOnUiThread { refreshStatus() }
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var statusAdapter: StatusRowAdapter
+    private lateinit var bridgeAdapter: StatusRowAdapter
+    private lateinit var connectionAdapter: StatusRowAdapter
+    private lateinit var scanAdapter: StatusRowAdapter
+
+    private data class Probe(val ok: Boolean, val detail: String)
+    private val probes = ConcurrentHashMap<String, Probe>()
+    @Volatile private var probing = false
+    @Volatile private var lastProbeAt = 0L
+
+    private val ticker = object : Runnable {
+        override fun run() {
+            refreshStatus()
+            if (System.currentTimeMillis() - lastProbeAt > PROBE_INTERVAL_MS) probeBridges()
+            handler.postDelayed(this, TICK_MS)
+        }
     }
 
-    private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        runOnUiThread { refreshStatus() }
-    }
-
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener { runOnUiThread { refreshStatus() } }
+    private val binderDeadListener = Shizuku.OnBinderDeadListener { runOnUiThread { refreshStatus() } }
     private val permissionResultListener =
         Shizuku.OnRequestPermissionResultListener { requestCode, _ ->
-            if (requestCode == REQUEST_CODE_SHIZUKU) {
-                runOnUiThread { refreshStatus() }
-            }
+            if (requestCode == REQUEST_CODE_SHIZUKU) runOnUiThread { refreshStatus() }
         }
+
+    /** Hideable panels: pref key → card. Customize itself is always shown. */
+    private val panels: List<Pair<String, MaterialCardView>> by lazy {
+        listOf(
+            "talk" to binding.panelTalk,
+            "hotspot" to binding.panelHotspot,
+            "scans" to binding.panelScans,
+            "systems" to binding.panelSystems,
+            "mesh" to binding.panelMesh,
+            "connections" to binding.panelConnections,
+            "security" to binding.panelSecurity,
+            "controls" to binding.panelControls,
+            "settings" to binding.panelSettings,
+            "scopes" to binding.panelScopes
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,150 +118,560 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         admin = DelegatedAdminActionHandler(this)
 
-        // Ensure MCP bearer token exists before the UI shows the reveal button.
         SecurePrefs.ensureMcpToken(applicationContext)
-
+        SecurePrefs.seedDefaultUrls(applicationContext)
         try {
             BrokerService.start(applicationContext)
         } catch (_: Exception) {
-            // Guard: never crash UI if bind fails
+            // never crash the UI if the service can't start
         }
 
         Shizuku.addBinderReceivedListener(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
 
-        binding.refreshButton.setOnClickListener { refreshStatus() }
-        binding.a11yButton.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        val copy: (String, String) -> Unit = { label, text -> copyToClipboard(label, text) }
+        statusAdapter = StatusRowAdapter(copy)
+        bridgeAdapter = StatusRowAdapter(copy)
+        connectionAdapter = StatusRowAdapter(copy)
+        scanAdapter = StatusRowAdapter(copy) { key ->
+            selectedScanTs = key.toLongOrNull() ?: -1L
+            lastScanVersion = -1 // re-render rows to move the "◀ shown" marker
+            refreshStatus()
         }
+        setupList(binding.statusList, statusAdapter)
+        setupList(binding.bridgeList, bridgeAdapter)
+        setupList(binding.connectionList, connectionAdapter)
+        setupList(binding.scanList, scanAdapter)
+        binding.scanCopyButton.setOnClickListener { copySelectedScan() }
+        binding.scanClearButton.setOnClickListener { clearScans() }
+        ScanHistoryStore.ensureLoaded(applicationContext)
+
+        binding.refreshButton.setOnClickListener { refreshStatus(); probeBridges() }
+        binding.probeBridgesButton.setOnClickListener { probeBridges() }
+        binding.a11yButton.setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         binding.shizukuPermissionButton.setOnClickListener { requestShizukuPermission() }
         binding.dhizukuButton.setOnClickListener { connectDhizuku(userInitiated = true) }
-        binding.datawedgeButton.setOnClickListener {
-            binding.datawedgeStatusText.text = "DataWedge: querying status/version/profiles…"
-            Thread({
-                val r = DataWedgeQuery.run(applicationContext, "all", 6000L)
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        if (r.optBoolean("datawedge_replied")) "DataWedge replied" else "No DataWedge reply",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    binding.datawedgeStatusText.text = buildString {
-                        append("status: ").append(r.opt("status")).append('\n')
-                        append("version: ").append(r.opt("version").toString().take(160)).append('\n')
-                        append("active: ").append(r.opt("active_profile")).append('\n')
-                        append("profiles: ").append(r.opt("profiles").toString().take(400))
-                    }
-                }
-            }, "DwQueryUi").start()
-        }
+        binding.datawedgeButton.setOnClickListener { queryDataWedge() }
+        binding.saveMeshBaseButton.setOnClickListener { saveMeshBase() }
         binding.saveUpstreamButton.setOnClickListener { saveUpstreamUrl() }
         binding.mcpTokenButton.setOnClickListener { toggleMcpToken() }
-        binding.mcpTokenButton.setOnLongClickListener {
-            rotateMcpToken()
-            true
-        }
+        binding.mcpTokenButton.setOnLongClickListener { rotateMcpToken(); true }
+        binding.rotateTokenButton.setOnClickListener { rotateMcpToken() }
         binding.batteryButton.setOnClickListener { requestBatteryExemption() }
         binding.saveAirtableButton.setOnClickListener { saveAirtableKey() }
         binding.saveBridgesButton.setOnClickListener { saveBridgeUrls() }
+        binding.repairDataWedgeButton.setOnClickListener { repairDataWedge() }
+        binding.scanRepairButton.setOnClickListener { repairDataWedge() }
+        binding.roamHardenButton.setOnClickListener { roamHarden() }
+        setupTalk()
+        setupHotspot()
+        maybeTalkTest(intent)
 
+        setupCustomize()
+        applyPanelVisibility()
+        applyAccent()
+        fillSettingsFields(force = true)
         refreshStatus()
-        // On start: init Dhizuku and, if not yet granted, request permission once per process so the
-        // broker appears in Dhizuku's app list for the user to approve.
+
         if (!dhizukuAutoRequested) {
             dhizukuAutoRequested = true
             connectDhizuku(userInitiated = false)
         }
-        // Prompt once per process for battery exemption (non-blocking; user can dismiss).
         if (!batteryPromptShown) {
             batteryPromptShown = true
             maybePromptBatteryExemption()
         }
     }
 
+    private fun setupList(rv: RecyclerView, adapter: StatusRowAdapter) {
+        rv.layoutManager = LinearLayoutManager(this)
+        rv.adapter = adapter
+        rv.itemAnimator = null
+        // Lists live inside the single outer NestedScrollView: let it own scrolling/flings
+        // (removes nested-scroll fighting that made swipes stutter or get swallowed).
+        rv.isNestedScrollingEnabled = false
+        rv.overScrollMode = View.OVER_SCROLL_NEVER
+    }
+
+    // ---------------- Customize ----------------
+
+    private fun setupCustomize() {
+        val container = binding.panelToggleContainer
+        container.removeAllViews()
+        val titles = mapOf(
+            "systems" to R.string.panel_systems, "mesh" to R.string.panel_mesh,
+            "connections" to R.string.panel_connections, "security" to R.string.panel_security,
+            "controls" to R.string.panel_controls, "settings" to R.string.panel_settings,
+            "scans" to R.string.panel_scans,
+            "talk" to R.string.panel_talk,
+            "hotspot" to R.string.panel_hotspot,
+            "scopes" to R.string.scopes_label
+        )
+        for ((key, _) in panels) {
+            val cb = MaterialCheckBox(this).apply {
+                text = getString(titles.getValue(key))
+                setTextColor(ContextCompat.getColor(context, R.color.cc_text))
+                typeface = android.graphics.Typeface.MONOSPACE
+                textSize = 12f
+                isChecked = UiPrefs.isPanelVisible(context, key)
+                setOnCheckedChangeListener { _, checked ->
+                    UiPrefs.setPanelVisible(context, key, checked)
+                    applyPanelVisibility()
+                }
+            }
+            container.addView(cb)
+        }
+        val group = binding.accentGroup
+        group.removeAllViews()
+        val current = UiPrefs.accent(this).key
+        for (a in UiPrefs.ACCENTS) {
+            val color = ContextCompat.getColor(this, a.colorRes)
+            val chip = Chip(this).apply {
+                id = View.generateViewId()
+                text = a.label
+                isCheckable = true
+                isChecked = a.key == current
+                chipBackgroundColor = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.cc_row))
+                chipStrokeColor = ColorStateList.valueOf(color)
+                chipStrokeWidth = 2f
+                setTextColor(color)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) {
+                        UiPrefs.setAccent(context, a.key)
+                        applyAccent()
+                    }
+                }
+            }
+            group.addView(chip)
+        }
+    }
+
+    private fun applyPanelVisibility() {
+        for ((key, card) in panels) {
+            card.visibility = if (UiPrefs.isPanelVisible(this, key)) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun applyAccent() {
+        val accent = ContextCompat.getColor(this, UiPrefs.accent(this).colorRes)
+        val stroke = ColorUtils.setAlphaComponent(accent, 0x55)
+        fun walk(v: View) {
+            when (v) {
+                is MaterialCardView -> v.strokeColor = stroke
+                is MaterialButton -> if (v.id != R.id.rowCopy) {
+                    v.setTextColor(accent)
+                    v.strokeColor = ColorStateList.valueOf(accent)
+                }
+                is TextView -> if (v.tag == "accent") v.setTextColor(accent)
+            }
+            if (v is ViewGroup && v !is RecyclerView) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(binding.root)
+        listOf(statusAdapter, bridgeAdapter, connectionAdapter, scanAdapter).forEach { it.accent = accent }
+    }
+
+    // ---------------- Status binding (real state only) ----------------
+
+    // Dashboard state is built OFF the main thread (binder calls, EncryptedSharedPreferences decrypts,
+    // NetworkInterface enumeration, discovery manifest, scan JSON) and applied on main with DiffUtil.
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "DashboardIO").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
+    }
+    /** Never crash the whole process (and the MCP server) if a callback lands after onDestroy shut [io] down. */
+    private fun ioSafe(block: () -> Unit) {
+        if (io.isShutdown || isDestroyed) return
+        try { io.execute(block) } catch (_: java.util.concurrent.RejectedExecutionException) { }
+    }
+    @Volatile private var refreshInFlight = false
+    @Volatile private var lastHotspotRefreshAt = 0L
+    @Volatile private var refreshQueued = false
+    private var lastRefreshAt = 0L
+    private var lastScanVersion = -1
+    @Volatile private var selectedScanTs: Long = -1L
+    private val refreshRunnable = Runnable { refreshStatus() }
+
+    private class UiState(
+        val statusRows: List<StatusRow>,
+        val bridgeRows: List<StatusRow>,
+        val connRows: List<StatusRow>,
+        val headerColorRes: Int,
+        val subtitle: String,
+        val dzGranted: Boolean,
+        val shizukuBinder: Boolean,
+        val shizukuPerm: Boolean,
+        val scopesText: String,
+        val dwStatus: String,
+        val meshProbeText: String,
+        val scanVersion: Int,
+        val scanRows: List<StatusRow>?,
+        val scanDetail: String?,
+    )
+
+    /** ≤1 Hz, coalesced, never on the main thread. */
+    private fun refreshStatus() {
+        val now = System.currentTimeMillis()
+        if (refreshInFlight) { refreshQueued = true; return }
+        val wait = MIN_REFRESH_MS - (now - lastRefreshAt)
+        if (wait > 0) {
+            handler.removeCallbacks(refreshRunnable)
+            handler.postDelayed(refreshRunnable, wait)
+            return
+        }
+        lastRefreshAt = now
+        refreshInFlight = true
+        val scanVer = ScanHistoryStore.version.get()
+        val needScans = scanVer != lastScanVersion
+        val sel = selectedScanTs
+        ioSafe {
+            val st = runCatching { buildUiState(needScans, scanVer, sel) }.getOrNull()
+            if (now - lastHotspotRefreshAt > 30_000L) { lastHotspotRefreshAt = now; refreshHotspot() }
+            runOnUiThread {
+                refreshInFlight = false
+                if (st != null && !isFinishing && !isDestroyed) applyUiState(st)
+                if (refreshQueued) { refreshQueued = false; refreshStatus() }
+            }
+        }
+    }
+
+    private fun applyUiState(st: UiState) {
+        statusAdapter.submit(st.statusRows)
+        bridgeAdapter.submit(st.bridgeRows)
+        connectionAdapter.submit(st.connRows)
+        setIfChanged(binding.meshProbeText, st.meshProbeText)
+        binding.headerLed.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, st.headerColorRes))
+        setIfChanged(binding.headerSubtitle, st.subtitle)
+        binding.dhizukuButton.isEnabled = !st.dzGranted
+        binding.shizukuPermissionButton.isEnabled = st.shizukuBinder && !st.shizukuPerm
+        setIfChanged(binding.scopesText, st.scopesText)
+        if (binding.datawedgeStatusText.text.isNullOrBlank() ||
+            binding.datawedgeStatusText.text == getString(R.string.datawedge_none) ||
+            binding.datawedgeStatusText.text.startsWith("scan:") || binding.datawedgeStatusText.text.startsWith("DataWedge")
+        ) setIfChanged(binding.datawedgeStatusText, st.dwStatus)
+        if (st.scanRows != null) {
+            scanAdapter.submit(st.scanRows)
+            lastScanVersion = st.scanVersion
+        }
+        st.scanDetail?.let { setIfChanged(binding.scanDetailText, it) }
+        if (!tokenVisible) setIfChanged(binding.mcpTokenText, getString(R.string.mcp_token_hidden))
+    }
+
+    private fun setIfChanged(tv: TextView, text: CharSequence) {
+        if (tv.text?.toString() != text.toString()) tv.text = text
+    }
+
+    /** Runs on [io]. Pure data gathering — must not touch views. */
+    private fun buildUiState(needScans: Boolean, scanVer: Int, selTs: Long): UiState {
+        val ctx = applicationContext
+        val snap = runCatching { BrokerStatusSnapshot.build(ctx) }.getOrNull()
+        val server = BrokerServer.get()
+        val running = server?.isRunning == true
+        val shizuku = ShizukuGateway.status()
+        val pm = getSystemService(PowerManager::class.java)
+        val battExempt = pm?.isIgnoringBatteryOptimizations(packageName) == true
+        val a11y = AgentAccessibilityService.isEnabled()
+        val airtableSet = SecurePrefs.getAirtableApiKey(ctx).isNotBlank()
+        val wifi = WifiPresenceEngine.stateJson()
+        val up = probes["upstream"]
+        val dzInstalled = DhizukuGateway.isInstalled(ctx)
+        val dzGranted = DhizukuGateway.isGranted()
+        val bound = server?.boundAddresses.orEmpty()
+        val tsIps = NetInfo.tailscaleIps()
+
+        val rows = mutableListOf<StatusRow>()
+        rows += StatusRow(
+            "MCP server",
+            if (running) "LISTENING ${bound.joinToString(" + ").ifEmpty { BrokerServer.HOST }} :${BrokerServer.PORT} · bearer required"
+            else if (server == null) "NOT STARTED" else "STOPPED ${server.lastBindError}".trim(),
+            if (running) Led.OK else Led.BAD
+        )
+        val tsBound = tsIps.filter { it in bound }
+        rows += StatusRow(
+            "Roam-proof (Tailscale direct)",
+            when {
+                tsBound.isNotEmpty() -> "DIRECT http://${tsBound.first()}:${BrokerServer.PORT} · survives reboot + Wi-Fi change"
+                tsIps.isNotEmpty() -> "Tailscale ${tsIps.first()} up · rebinding…"
+                RoamKeeper.isInstalled(ctx, RoamKeeper.TAILSCALE_PKG) -> "Tailscale OFF — open Tailscale / tap Roam-proof setup"
+                else -> "Tailscale not installed — only loopback / adb"
+            } + " · last net event: ${RoamKeeper.lastEvent}",
+            when { tsBound.isNotEmpty() -> Led.OK; tsIps.isNotEmpty() -> Led.WARN; else -> Led.BAD },
+            copyText = tsBound.firstOrNull()?.let { "http://$it:${BrokerServer.PORT}/mcp" },
+            key = "roam"
+        )
+        rows += StatusRow("Shizuku binder", if (shizuku.binderAlive) "CONNECTED" else "NOT CONNECTED",
+            if (shizuku.binderAlive) Led.OK else Led.BAD)
+        rows += StatusRow("Shizuku permission", if (shizuku.permissionGranted) "GRANTED" else "NOT GRANTED",
+            if (shizuku.permissionGranted) Led.OK else Led.WARN)
+        rows += StatusRow("Shizuku backend", when (shizuku.backendUid) {
+            0 -> "root (uid 0)"; 2000 -> "ADB shell (uid 2000)"; null -> "not available"
+            else -> "uid ${shizuku.backendUid}"
+        }, if (shizuku.backendUid != null) Led.INFO else Led.OFF)
+        rows += StatusRow(
+            "Dhizuku device-owner",
+            when {
+                !dzInstalled -> "NOT INSTALLED"
+                dzGranted -> "GRANTED (owner ${DhizukuGateway.ownerComponent()?.packageName ?: "?"})"
+                else -> "NOT GRANTED (${DhizukuGateway.lastPermissionResult})"
+            },
+            when { dzGranted -> Led.OK; dzInstalled -> Led.WARN; else -> Led.OFF }
+        )
+        rows += StatusRow("Accessibility service", if (a11y) "ON" else "OFF (watchdog re-enables within 30 s)", if (a11y) Led.OK else Led.WARN)
+        val sc = DataWedgeResultReceiver.scanCount.get()
+        rows += StatusRow(
+            "Scan receiver",
+            (if (DataWedgeResultReceiver.isDynamicRegistered()) "LISTENING" else "NOT REGISTERED") +
+                " · $sc scan(s) this session" +
+                (if (DataWedgeResultReceiver.lastScanAt > 0) " · last ${DateFormat.getTimeInstance().format(Date(DataWedgeResultReceiver.lastScanAt))} via ${DataWedgeResultReceiver.lastScanPath}" else " · none yet — tap Repair DataWedge"),
+            when { !DataWedgeResultReceiver.isDynamicRegistered() -> Led.BAD; sc > 0 -> Led.OK; else -> Led.WARN },
+            key = "scanrx"
+        )
+        rows += StatusRow(
+            "Upstream reachable",
+            when {
+                up == null -> "not probed yet · ${hostOf(SecurePrefs.getUpstreamMcpUrl(ctx))}"
+                up.ok -> "YES · ${hostOf(SecurePrefs.getUpstreamMcpUrl(ctx))}"
+                else -> "NO · ${up.detail}"
+            },
+            when { up == null -> Led.OFF; up.ok -> Led.OK; else -> Led.BAD }
+        )
+        rows += StatusRow("Airtable key", if (airtableSet) "SET (hidden)" else "NOT SET",
+            if (airtableSet) Led.OK else Led.OFF)
+        val wState = wifi.optString("state")
+        rows += StatusRow(
+            "Wi-Fi presence engine (RSSI, near-device only)",
+            if (wifi.optLong("last_scan_at_ms") > 0)
+                "$wState · last presence=${wifi.optBoolean("last_presence_detected")} " +
+                    "motion=${wifi.optDouble("last_motion_score")} conf=${wifi.optDouble("last_confidence")}"
+            else wState,
+            when (wState) { "scanning" -> Led.INFO; "idle" -> Led.OK; "idle_last_failed" -> Led.WARN; else -> Led.OFF }
+        )
+        val nsdTypes = NsdAdvertiser.registeredTypes()
+        rows += StatusRow(
+            "mDNS advertisement",
+            if (nsdTypes.isNotEmpty()) "${nsdTypes.joinToString(" + ")} as ${NsdAdvertiser.serviceName()}"
+            else NsdAdvertiser.lastError().ifBlank { "not registered" },
+            if (nsdTypes.isNotEmpty()) Led.OK else Led.WARN
+        )
+        rows += StatusRow("Battery optimization", if (battExempt) "EXEMPT" else "NOT EXEMPT (Doze may stop server)",
+            if (battExempt) Led.OK else Led.WARN)
+        rows += StatusRow(
+            "App",
+            "v${versionName()} · pid ${snap?.optInt("pid") ?: android.os.Process.myPid()} · up ${fmtUptime(BrokerStatusSnapshot.uptimeMs())}",
+            Led.INFO, key = "app"
+        )
+
+        val scopes = runCatching { admin.getActiveScopes() }.getOrDefault(emptyList())
+        val dhizukuScopes = if (dzGranted) {
+            runCatching { com.rosan.dhizuku.api.Dhizuku.getDelegatedScopes()?.toList() }.getOrNull().orEmpty()
+        } else emptyList()
+        val allScopes = (scopes + dhizukuScopes).distinct()
+        val scopesText = when {
+            allScopes.isNotEmpty() -> allScopes.joinToString("\n")
+            dzGranted -> getString(R.string.no_scopes_dhizuku_granted)
+            dzInstalled -> getString(R.string.no_scopes_dhizuku_pending, DhizukuGateway.lastPermissionResult)
+            else -> getString(R.string.no_scopes)
+        }
+
+        var scanRows: List<StatusRow>? = null
+        var scanDetail: String? = null
+        if (needScans || selTs >= 0) {
+            ScanHistoryStore.ensureLoaded(ctx)
+            val arr = ScanHistoryStore.latest(30)
+            if (needScans) {
+                val sr = ArrayList<StatusRow>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val s = arr.optJSONObject(i) ?: continue
+                    val ts = s.optLong("ts")
+                    val whenStr = if (ts > 0) DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(ts)) else "?"
+                    val firstMeaning = s.optJSONArray("english")?.let { e ->
+                        (0 until e.length()).mapNotNull { e.optJSONObject(it) }.firstOrNull { it.optString("field") != "Barcode type" }
+                            ?.optString("meaning")
+                    }?.take(70)
+                    sr += StatusRow(
+                        label = "$whenStr · ${s.optString("label_type", "unknown")}${if (ts == selTs) "  ◀ shown" else ""}",
+                        value = s.optString("visible_text", s.optString("data_string")).take(60) +
+                            (firstMeaning?.let { "\n$it" } ?: ""),
+                        state = if (ts == selTs) Led.OK else Led.INFO,
+                        copyText = s.toString(),
+                        key = ts.toString()
+                    )
+                }
+                scanRows = sr
+            }
+            var detail: JSONObject? = null
+            if (selTs >= 0) for (i in 0 until arr.length()) { val s = arr.optJSONObject(i); if (s?.optLong("ts") == selTs) { detail = s; break } }
+            if (detail == null) detail = arr.optJSONObject(0)
+            scanDetail = if (detail != null) formatScanDetail(detail) else getString(R.string.scans_empty)
+        }
+
+        val mesh = BridgeMeshRelay(ctx)
+        val bridgeRows = BridgeMeshRelay.BRIDGES.map { name ->
+            val url = mesh.urlFor(name)
+            val p = probes[name]
+            StatusRow(
+                name,
+                when {
+                    url.isBlank() -> "not configured"
+                    p == null -> "${if (probing) "probing…" else "unknown"} · $url"
+                    p.ok -> "REACHABLE · $url"
+                    else -> "UNREACHABLE · ${p.detail}"
+                },
+                when { url.isBlank() -> Led.OFF; p == null -> Led.OFF; p.ok -> Led.OK; else -> Led.BAD },
+                copyText = url.ifBlank { null }
+            )
+        }
+        val meshText = when {
+            probing -> getString(R.string.mesh_probing)
+            lastProbeAt == 0L -> getString(R.string.mesh_not_probed)
+            else -> getString(R.string.mesh_probed_at, DateFormat.getTimeInstance().format(Date(lastProbeAt)))
+        }
+
+        return UiState(
+            statusRows = rows,
+            bridgeRows = bridgeRows,
+            connRows = buildConnectionRows(),
+            headerColorRes = when {
+                running && shizuku.permissionGranted -> R.color.led_ok
+                running -> R.color.led_warn
+                else -> R.color.led_bad
+            },
+            subtitle = "v${versionName()} · ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · MCP :${BrokerServer.PORT}",
+            dzGranted = dzGranted,
+            shizukuBinder = shizuku.binderAlive,
+            shizukuPerm = shizuku.permissionGranted,
+            scopesText = scopesText,
+            dwStatus = DataWedgeResultReceiver.lastStatusString.get(),
+            meshProbeText = meshText,
+            scanVersion = scanVer,
+            scanRows = scanRows,
+            scanDetail = scanDetail,
+        )
+    }
+
+    /** Rows come from the very same manifest served at GET /discover, so UI and AIs agree. Runs on [io]. */
+    private fun buildConnectionRows(): List<StatusRow> {
+        val manifest = runCatching { DiscoveryProvider.manifest(applicationContext) }.getOrNull() ?: return emptyList()
+        val rows = mutableListOf<StatusRow>()
+        val base = "http://${BrokerServer.HOST}:${BrokerServer.PORT}"
+        rows += StatusRow("Discovery manifest (open)", "$base/discover", Led.INFO, "$base/discover")
+        rows += StatusRow("Well-known (open)", "$base/.well-known/mcp.json", Led.INFO, "$base/.well-known/mcp.json")
+        val conns = manifest.optJSONArray("connections")
+        for (i in 0 until (conns?.length() ?: 0)) {
+            val c = conns!!.optJSONObject(i) ?: continue
+            when (c.optString("type")) {
+                "loopback" -> {
+                    rows += StatusRow("Loopback MCP (HTTP)", c.optString("mcp_http"), Led.OK, c.optString("mcp_http"))
+                    rows += StatusRow("Loopback MCP (WebSocket)", c.optString("mcp_ws"), Led.OK, c.optString("mcp_ws"))
+                }
+                "tailscale" -> rows += if (c.optBoolean("direct_mcp")) StatusRow(
+                    "Tailscale MCP (direct, roam-proof)", c.optString("mcp_http"), Led.OK, c.optString("mcp_http"),
+                    key = "ts_${c.optString("address")}"
+                ) else StatusRow(
+                    "Tailscale node", "${c.optString("address")} · not bound yet (via adb forward)",
+                    Led.WARN, c.optString("address"), key = "ts_${c.optString("address")}"
+                )
+                "mesh_bridge" -> {
+                    val p = probes[c.optString("bridge")]
+                    rows += StatusRow(
+                        "Mesh · ${c.optString("bridge")}", c.optString("mcp_http"),
+                        when { p == null -> Led.OFF; p.ok -> Led.OK; else -> Led.BAD }, c.optString("mcp_http")
+                    )
+                }
+                "upstream" -> rows += StatusRow("Upstream", c.optString("mcp_http"), Led.INFO, c.optString("mcp_http"))
+            }
+        }
+        val mdns = manifest.optJSONObject("mdns")
+        if (mdns != null) {
+            rows += StatusRow(
+                "mDNS / zeroconf",
+                "${mdns.optJSONArray("service_types")?.join(" + ")?.replace("\"", "")} · ${mdns.optString("service_name")} · port ${mdns.optInt("port")}",
+                if (mdns.optBoolean("registered")) Led.OK else Led.WARN
+            )
+        }
+        return rows
+    }
+
+    private fun probeBridges() {
+        if (probing) return
+        probing = true
+        refreshStatus()
+        val ctx = applicationContext
+        Thread({
+            val mesh = BridgeMeshRelay(ctx)
+            for (name in BridgeMeshRelay.BRIDGES) {
+                if (mesh.urlFor(name).isBlank()) { probes.remove(name); continue }
+                val h = runCatching { mesh.health(name, PROBE_TIMEOUT_MS) }.getOrNull()
+                probes[name] = if (h?.optBoolean("ok") == true) Probe(true, "HTTP ${h.optInt("http")}")
+                else Probe(false, h?.optString("error")?.take(90) ?: "probe failed")
+            }
+            lastProbeAt = System.currentTimeMillis()
+            probing = false
+            runOnUiThread { if (!isFinishing) refreshStatus() }
+        }, "BridgeProbe").start()
+    }
+
+    // ---------------- Settings (prefilled, editable) ----------------
+
+    private fun fillSettingsFields(force: Boolean) {
+        val ctx = applicationContext
+        if (force || !binding.meshBaseInput.hasFocus()) binding.meshBaseInput.setText(SecurePrefs.getMeshBaseUrl(ctx))
+        if (force || !binding.upstreamUrlInput.hasFocus()) binding.upstreamUrlInput.setText(SecurePrefs.getUpstreamMcpUrl(ctx))
+        if (force || !binding.bridgeUrlsInput.hasFocus()) {
+            binding.bridgeUrlsInput.setText(
+                SecurePrefs.BRIDGE_NAMES.joinToString(",\n") { "$it=${SecurePrefs.getBridgeUrl(ctx, it)}" }
+            )
+        }
+        if (force || !binding.airtableKeyInput.hasFocus()) {
+            binding.airtableKeyInput.hint = getString(
+                if (SecurePrefs.getAirtableApiKey(ctx).isNotBlank()) R.string.airtable_key_set else R.string.airtable_key_hint
+            )
+        }
+    }
+
+    private fun saveMeshBase() {
+        val raw = binding.meshBaseInput.text?.toString().orEmpty().trim()
+        try {
+            val v = if (raw.trimEnd('/') == SecurePrefs.DEFAULT_MESH_BASE_URL) "" else raw
+            SecurePrefs.setMeshBaseUrl(applicationContext, v)
+            Toast.makeText(this, "Mesh base: ${SecurePrefs.getMeshBaseUrl(applicationContext)}", Toast.LENGTH_SHORT).show()
+            fillSettingsFields(force = true)
+            refreshStatus()
+            probeBridges()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Invalid URL: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun saveUpstreamUrl() {
         val raw = binding.upstreamUrlInput.text?.toString().orEmpty().trim()
         try {
-            SecurePrefs.setUpstreamMcpUrl(applicationContext, raw)
-            val host = if (raw.isEmpty()) "(cleared — set a Tailscale/tunnel URL)" else raw
-            Toast.makeText(this, "Upstream saved: $host", Toast.LENGTH_LONG).show()
-            // Optional: if user pasted a 192.168 address as primary, warn.
-            if (raw.contains("192.168.") || raw.contains("10.0.") ) {
-                Toast.makeText(
-                    this,
-                    "Warning: that looks LAN-only. Prefer Tailscale 100.x or an https tunnel as primary; put 192.168 in LAN fallback.",
-                    Toast.LENGTH_LONG
-                ).show()
+            val def = SecurePrefs.defaultBridgeUrl("android", SecurePrefs.getMeshBaseUrl(applicationContext))
+            SecurePrefs.setUpstreamMcpUrl(applicationContext, if (raw == def) "" else raw)
+            Toast.makeText(this, "Upstream: ${SecurePrefs.getUpstreamMcpUrl(applicationContext)}", Toast.LENGTH_LONG).show()
+            if (raw.contains("192.168.") || raw.contains("10.0.")) {
+                Toast.makeText(this, "Warning: that looks LAN-only; it will not work off the home Wi-Fi.", Toast.LENGTH_LONG).show()
             }
+            fillSettingsFields(force = true)
             refreshStatus()
-            // Nudge notification text
             BrokerService.start(applicationContext)
         } catch (e: Exception) {
             Toast.makeText(this, "Invalid URL: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun toggleMcpToken() {
-        if (tokenVisible) {
-            tokenVisible = false
-            binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
-            binding.mcpTokenButton.text = getString(R.string.reveal_mcp_token)
-            return
-        }
-        val token = SecurePrefs.ensureMcpToken(applicationContext)
-        tokenVisible = true
-        binding.mcpTokenText.text = token
-        binding.mcpTokenButton.text = getString(R.string.hide_mcp_token)
-        val cm = getSystemService(ClipboardManager::class.java)
-        cm?.setPrimaryClip(ClipData.newPlainText("mcp_token", token))
-        Toast.makeText(this, "MCP token copied to clipboard", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun rotateMcpToken() {
-        AlertDialog.Builder(this)
-            .setTitle("Rotate MCP token?")
-            .setMessage("Any Termux scripts / MCP clients using the old token will stop working until you update them.")
-            .setPositiveButton("Rotate") { _, _ ->
-                val token = SecurePrefs.rotateMcpToken(applicationContext)
-                tokenVisible = true
-                binding.mcpTokenText.text = token
-                binding.mcpTokenButton.text = getString(R.string.hide_mcp_token)
-                val cm = getSystemService(ClipboardManager::class.java)
-                cm?.setPrimaryClip(ClipData.newPlainText("mcp_token", token))
-                Toast.makeText(this, "New MCP token generated and copied", Toast.LENGTH_LONG).show()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun saveAirtableKey() {
-        val raw = binding.airtableKeyInput.text?.toString().orEmpty().trim()
-        SecurePrefs.setAirtableApiKey(applicationContext, raw)
-        binding.airtableKeyInput.setText("")
-        Toast.makeText(
-            this,
-            if (raw.isEmpty()) "Airtable key cleared" else "Airtable key saved (encrypted)",
-            Toast.LENGTH_SHORT
-        ).show()
-        refreshStatus()
-    }
-
     private fun saveBridgeUrls() {
-        // Format: magic=https://…,war=https://…,ether=https://…  (omit any you don't want to change)
-        val raw = binding.bridgeUrlsInput.text?.toString().orEmpty().trim()
-        if (raw.isEmpty()) {
-            Toast.makeText(this, "Enter e.g. magic=https://host/mcp,war=…", Toast.LENGTH_LONG).show()
-            return
-        }
+        // Format: name=url separated by commas/newlines. Blank url or the built-in default = restore default.
+        val raw = binding.bridgeUrlsInput.text?.toString().orEmpty()
+        val base = SecurePrefs.getMeshBaseUrl(applicationContext)
         var saved = 0
         val errors = StringBuilder()
-        raw.split(',').map { it.trim() }.filter { it.contains('=') }.forEach { pair ->
+        raw.split(',', '\n').map { it.trim() }.filter { it.contains('=') }.forEach { pair ->
             val name = pair.substringBefore('=').trim().lowercase()
             val url = pair.substringAfter('=').trim()
             if (name in SecurePrefs.BRIDGE_NAMES) {
                 try {
-                    SecurePrefs.setBridgeUrl(applicationContext, name, url)
+                    val v = if (url == SecurePrefs.defaultBridgeUrl(name, base)) "" else url
+                    SecurePrefs.setBridgeUrl(applicationContext, name, v)
                     saved++
                 } catch (e: Exception) {
                     errors.append("$name: ${e.message}; ")
@@ -204,16 +680,81 @@ class MainActivity : AppCompatActivity() {
                 errors.append("unknown bridge '$name'; ")
             }
         }
-        Toast.makeText(
-            this,
-            "Saved $saved bridge URL(s)${if (errors.isNotEmpty()) " — $errors" else ""}",
-            Toast.LENGTH_LONG
-        ).show()
+        Toast.makeText(this, "Saved $saved bridge URL(s)${if (errors.isNotEmpty()) " — $errors" else ""}", Toast.LENGTH_LONG).show()
+        fillSettingsFields(force = true)
+        refreshStatus()
+        probeBridges()
+    }
+
+    private fun saveAirtableKey() {
+        val raw = binding.airtableKeyInput.text?.toString().orEmpty().trim()
+        SecurePrefs.setAirtableApiKey(applicationContext, raw)
+        binding.airtableKeyInput.setText("")
+        Toast.makeText(this, if (raw.isEmpty()) "Airtable key cleared" else "Airtable key saved (encrypted)", Toast.LENGTH_SHORT).show()
         refreshStatus()
     }
 
+    // ---------------- Security ----------------
+
+    private fun toggleMcpToken() {
+        if (tokenVisible) {
+            hideToken()
+            return
+        }
+        val token = SecurePrefs.ensureMcpToken(applicationContext)
+        showTokenOnce(token, "MCP token copied to clipboard")
+    }
+
+    private fun rotateMcpToken() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.rotate_confirm_title)
+            .setMessage(R.string.rotate_confirm_msg)
+            .setPositiveButton("Rotate") { _, _ ->
+                val token = SecurePrefs.rotateMcpToken(applicationContext)
+                showTokenOnce(token, "New MCP token generated and copied")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showTokenOnce(token: String, msg: String) {
+        tokenVisible = true
+        binding.mcpTokenText.text = token
+        binding.mcpTokenButton.text = getString(R.string.hide_mcp_token)
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("mcp_token", token))
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun hideToken() {
+        tokenVisible = false
+        binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
+        binding.mcpTokenButton.text = getString(R.string.reveal_mcp_token)
+    }
+
+    private fun copyToClipboard(label: String, text: String) {
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(this, getString(R.string.copied, text), Toast.LENGTH_SHORT).show()
+    }
+
+    // ---------------- Controls ----------------
+
+    private fun queryDataWedge() {
+        binding.datawedgeStatusText.text = "DataWedge: querying status/version/profiles…"
+        Thread({
+            val r = DataWedgeQuery.run(applicationContext, "all", 6000L)
+            runOnUiThread {
+                Toast.makeText(this, if (r.optBoolean("datawedge_replied")) "DataWedge replied" else "No DataWedge reply", Toast.LENGTH_SHORT).show()
+                binding.datawedgeStatusText.text = buildString {
+                    append("status: ").append(r.opt("status")).append('\n')
+                    append("version: ").append(r.opt("version").toString().take(160)).append('\n')
+                    append("active: ").append(r.opt("active_profile")).append('\n')
+                    append("profiles: ").append(r.opt("profiles").toString().take(400))
+                }
+            }
+        }, "DwQueryUi").start()
+    }
+
     private fun requestBatteryExemption() {
-        if (Build.VERSION.SDK_INT < 23) return
         val pm = getSystemService(PowerManager::class.java) ?: return
         if (pm.isIgnoringBatteryOptimizations(packageName)) {
             Toast.makeText(this, "Already ignoring battery optimizations", Toast.LENGTH_SHORT).show()
@@ -221,36 +762,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            startActivity(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                    .setData(Uri.parse("package:$packageName"))
-            )
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse("package:$packageName")))
         } catch (_: Exception) {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
     }
 
     private fun maybePromptBatteryExemption() {
-        if (Build.VERSION.SDK_INT < 23) return
         val pm = getSystemService(PowerManager::class.java) ?: return
         if (pm.isIgnoringBatteryOptimizations(packageName)) return
-        // Soft toast only — tapping the dedicated button opens the system dialog.
-        Toast.makeText(
-            this,
-            "Tip: tap “Ignore battery optimizations” so the MCP server survives Doze",
-            Toast.LENGTH_LONG
-        ).show()
+        Toast.makeText(this, "Tip: tap “Ignore battery optimizations” so the MCP server survives Doze", Toast.LENGTH_LONG).show()
     }
 
     private fun connectDhizuku(userInitiated: Boolean) {
-        // A manual tap re-inits the Dhizuku binder so a Dhizuku that was activated/restarted after
-        // the broker launched is picked up (previously a stale init made the tap a no-op).
         if (userInitiated && DhizukuGateway.isInstalled(applicationContext)) {
             DhizukuGateway.reconnect(applicationContext)
         }
-        val result = DhizukuGateway.requestPermission(applicationContext) { _ ->
-            runOnUiThread { refreshStatus() }
-        }
+        val result = DhizukuGateway.requestPermission(applicationContext) { _ -> runOnUiThread { refreshStatus() } }
         if (userInitiated || result != "dhizuku_not_installed") {
             val msg = when (result) {
                 "requested" -> "Dhizuku: approve Shizuku AI Broker in the Dhizuku prompt / app list"
@@ -264,123 +792,396 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
     }
 
-    override fun onResume() {
-        super.onResume()
+    private fun requestShizukuPermission() {
+        when (val result = ShizukuGateway.requestPermission(REQUEST_CODE_SHIZUKU)) {
+            PermissionRequestResult.AlreadyGranted -> refreshStatus()
+            PermissionRequestResult.Requested -> Toast.makeText(this, "Shizuku permission request sent.", Toast.LENGTH_SHORT).show()
+            PermissionRequestResult.BinderUnavailable -> Toast.makeText(this, "Shizuku service is not connected.", Toast.LENGTH_LONG).show()
+            PermissionRequestResult.RationaleRequired -> Toast.makeText(this, "Enable permission from the Shizuku app, then try again.", Toast.LENGTH_LONG).show()
+            is PermissionRequestResult.Failed -> Toast.makeText(this, "Permission request failed: ${result.cause?.message ?: "unknown"}", Toast.LENGTH_LONG).show()
+        }
         refreshStatus()
     }
 
+    // ---------------- Lifecycle ----------------
+
+    override fun onResume() {
+        super.onResume()
+        DataWedgeResultReceiver.scanListeners.addIfAbsent(scanListener)
+        handler.removeCallbacks(ticker)
+        handler.post(ticker)
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(ticker)
+        handler.removeCallbacks(refreshRunnable)
+        DataWedgeResultReceiver.scanListeners.remove(scanListener)
+        // Privacy: the mic never stays on in the background.
+        talk?.stop()
+        // "Show once": never leave a revealed token on screen when the app is backgrounded.
+        hideToken()
+        super.onPause()
+    }
+
+
+    // ---------------- Hotspot / Extender + Wi-Fi detection (1.8.5) ----------------
+
+    private fun setupHotspot() {
+        binding.brokerPauseSwitch.isChecked = BrokerPause.isPaused(this)
+        binding.brokerPauseSwitch.setOnCheckedChangeListener { _, on ->
+            ioSafe {
+                BrokerPause.setPaused(applicationContext, on)
+                runOnUiThread {
+                    binding.brokerPauseSwitch.isChecked = BrokerPause.isPaused(applicationContext)
+                }
+            }
+        }
+        binding.wifiDetectionSwitch.isChecked = com.rjkyker.shizukuai.broker.sensing.WifiDetection.isEnabled(this)
+        binding.wifiDetectionSwitch.setOnCheckedChangeListener { _, on ->
+            ioSafe {
+                com.rjkyker.shizukuai.broker.sensing.WifiDetection.setEnabled(applicationContext, on)
+                if (on) maybeRequestLocation()
+                refreshHotspot()
+            }
+        }
+        binding.hotspotStartButton.setOnClickListener {
+            binding.hotspotStatusText.text = "Starting hotspot…"
+            ioSafe { val r = com.rjkyker.shizukuai.broker.hotspot.HotspotManager.start(applicationContext); runOnUiThread { showHotspot(r) } }
+        }
+        binding.hotspotStopButton.setOnClickListener {
+            binding.hotspotStatusText.text = "Stopping hotspot…"
+            ioSafe { val r = com.rjkyker.shizukuai.broker.hotspot.HotspotManager.stop(applicationContext); runOnUiThread { showHotspot(r) } }
+        }
+        binding.hotspotShowPassButton.setOnClickListener {
+            val hm = com.rjkyker.shizukuai.broker.hotspot.HotspotManager
+            val pass = hm.passphraseForUi(applicationContext)
+            AlertDialog.Builder(this)
+                .setTitle("Hotspot ${hm.ssid(applicationContext)}")
+                .setMessage("Password (WPA2):\n\n$pass\n\nShown only here. Not sent to Muse, MCP, logs or Airtable.")
+                .setPositiveButton("OK", null)
+                .setNeutralButton("New password") { _, _ -> hm.regeneratePassphrase(applicationContext) }
+                .show()
+        }
+        ioSafe { maybeRequestLocation(); refreshHotspot() }
+    }
+
+    private fun maybeRequestLocation() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread { runCatching { requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION), 4711) } }
+        }
+    }
+
+    /** Off main thread. */
+    private fun refreshHotspot() {
+        val st = runCatching { com.rjkyker.shizukuai.broker.hotspot.HotspotManager.status(applicationContext) }.getOrNull()
+        val wd = runCatching { com.rjkyker.shizukuai.broker.sensing.WifiDetection.stateJson(applicationContext, includeAps = true) }.getOrNull()
+        runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            st?.let { showHotspot(it) }
+            wd?.let { showWifiDetection(it) }
+        }
+    }
+
+    private fun showHotspot(st: JSONObject) {
+        val on = st.optBoolean("softap_enabled")
+        binding.hotspotStatusText.text = buildString {
+            append(if (on) "ON · ${st.optString("mode")} · ${st.optString("ssid")}" else "OFF · ${st.optString("ssid")}")
+            append("\nclients=${st.opt("connected_clients")} · upstream=${st.optString("upstream")}")
+            if (st.optString("tether_upstream_iface").isNotEmpty()) append(" (${st.optString("tether_upstream_iface")})")
+            append(" · internet shared=${st.optBoolean("internet_shared")}")
+            append("\nAP band=${st.opt("ap_band")} ch=${st.opt("ap_channel")} · upstream RSSI=${st.opt("upstream_rssi_dbm")} dBm")
+            append("\nrepeater (STA+AP)=${st.opt("sta_ap_concurrency_supported")}: ${st.optString("repeater_note")}")
+            st.optString("error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+            st.optString("softap_error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+        }
+    }
+
+    private fun showWifiDetection(wd: JSONObject) {
+        val aps = wd.optJSONArray("aps")
+        binding.wifiDetectionText.text = buildString {
+            append(if (wd.optBoolean("enabled")) "ON" else "OFF")
+            append(" · ${wd.optInt("last_ap_count")} APs heard · strongest ${wd.opt("strongest_rssi_dbm")} dBm")
+            if (!wd.optBoolean("location_permission")) append("\n⚠ needs Location permission")
+            if (!wd.optBoolean("location_on")) append("\n⚠ Location services are off")
+            wd.optString("last_error").takeIf { it.isNotEmpty() }?.let { append("\n⚠ $it") }
+            if (aps != null) for (i in 0 until minOf(6, aps.length())) {
+                val a = aps.getJSONObject(i)
+                append("\n${a.optInt("rssi_dbm")} dBm  ${a.optString("band")} ch${a.optInt("channel")}  ${a.optString("ssid").ifEmpty { "(hidden)" }.take(22)}")
+            }
+        }
+    }
+
+    // ---------------- Talk (live voice agent) ----------------
+
+    private var talk: TalkController? = null
+    private val talkHistory = ArrayDeque<String>()
+
+    private val micPermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startTalk() else Toast.makeText(this, R.string.talk_mic_denied, Toast.LENGTH_LONG).show()
+    }
+
+    private fun setupTalk() {
+        val client = MuseVoiceClient { SecurePrefs.getMcpToken(applicationContext) }
+        talk = TalkController(this, client, ::talkFacts, object : TalkController.Listener {
+            override fun onState(state: TalkController.State, detail: String) {
+                binding.talkStatusText.text = detail
+                binding.talkLed.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, when (state) {
+                    TalkController.State.LISTENING -> R.color.led_ok
+                    TalkController.State.THINKING -> R.color.led_info
+                    TalkController.State.SPEAKING -> R.color.led_warn
+                    TalkController.State.ERROR -> R.color.led_bad
+                    TalkController.State.IDLE -> R.color.led_off
+                }))
+                val on = talk?.active == true
+                binding.talkStopButton.isEnabled = on
+                binding.talkButton.text = getString(if (on) R.string.talk_stop else R.string.talk_start)
+                if (state == TalkController.State.IDLE) binding.talkPartialText.text = ""
+            }
+            override fun onPartial(text: String) { binding.talkPartialText.text = "… $text" }
+            override fun onTurn(who: String, text: String) {
+                binding.talkPartialText.text = ""
+                talkHistory.addLast("$who: $text")
+                while (talkHistory.size > 8) talkHistory.removeFirst()
+                binding.talkHistoryText.text = talkHistory.joinToString("\n")
+            }
+            override fun onVoiceLabel(label: String) { binding.talkVoiceButton.text = label }
+        }).also { it.preferredVoiceName = UiPrefs.voiceName(this); it.museVoice = UiPrefs.museVoice(this) }
+        binding.talkButton.setOnClickListener {
+            if (talk?.active == true) talk?.stop() else ensureMicThenTalk()
+        }
+        binding.talkStopButton.setOnClickListener { talk?.stop() }
+        binding.talkVoiceButton.setOnClickListener { pickVoice() }
+    }
+
+    private fun ensureMicThenTalk() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) startTalk()
+        else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+
+    private fun startTalk() { talk?.start() }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        maybeTalkTest(intent)
+    }
+
+    /**
+     * Debug builds only: `am start -n com.rjkyker.shizukuai.broker/.ui.MainActivity --es talk_test_text "…"`
+     * runs one Talk turn through the Muse relay without the mic and plays the reply (verifies Muse audio).
+     */
+    private fun maybeTalkTest(i: Intent?) {
+        val text = i?.getStringExtra(EXTRA_TALK_TEST)?.trim().orEmpty()
+        if (text.isEmpty()) return
+        i?.removeExtra(EXTRA_TALK_TEST)
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable) return
+        binding.scroll.post { binding.scroll.smoothScrollTo(0, binding.panelTalk.top) }
+        talk?.injectUtterance(text.take(500))
+    }
+
+    /** Muse voice picker (Static default) + entry for the Android-TTS fallback voice. */
+    private fun pickVoice() {
+        val t = talk ?: return
+        val names = MuseVoiceClient.MUSE_VOICES.keys.toList()
+        val labels = (names.map { n -> (if (n == t.museVoice) "● " else "○ ") + "Muse — $n" + if (n == MuseVoiceClient.DEFAULT_VOICE) " (default)" else "" } +
+            listOf("Fallback device voice…")).toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Muse voice")
+            .setItems(labels) { _, idx ->
+                if (idx < names.size) {
+                    UiPrefs.setMuseVoice(this, names[idx])
+                    t.museVoice = names[idx]
+                    binding.talkVoiceButton.text = t.voiceLabel()
+                } else pickDeviceVoice()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickDeviceVoice() {
+        val t = talk ?: return
+        val voices = t.englishVoices()
+        if (voices.isEmpty()) { Toast.makeText(this, "No offline English device voices installed", Toast.LENGTH_SHORT).show(); return }
+        val names = voices.map { "${it.name} (${it.locale.displayName})" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Device voice (Android TTS)")
+            .setItems(names) { _, idx ->
+                UiPrefs.setVoiceName(this, voices[idx].name)
+                t.preferredVoiceName = voices[idx].name
+                t.applyVoice()
+                binding.talkVoiceButton.text = t.voiceLabel()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Called on the talk worker / main thread; cheap reads only. */
+    private fun talkFacts(): LocalAgent.Facts {
+        val last = ScanHistoryStore.latest(1).optJSONObject(0)
+        val eng = last?.let { s ->
+            val e = s.optJSONArray("english") ?: ScanExplainer.explain(s)
+            (0 until e.length()).mapNotNull { e.optJSONObject(it)?.optString("meaning") }
+        }.orEmpty()
+        val sh = ShizukuGateway.status()
+        return LocalAgent.Facts(
+            serverRunning = BrokerServer.get()?.isRunning == true,
+            boundAddresses = BrokerServer.get()?.boundAddresses.orEmpty(),
+            accessibilityOn = AgentAccessibilityService.isEnabled(),
+            shizukuOk = sh.binderAlive && sh.permissionGranted,
+            lastScanEnglish = eng,
+            nowText = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()),
+        )
+    }
+
+    private fun formatScanDetail(s: JSONObject): String {
+        val sb = StringBuilder()
+        val english = s.optJSONArray("english") ?: ScanExplainer.explain(s)
+        sb.append("▌ WHAT THIS MEANS\n")
+        for (i in 0 until english.length()) {
+            val e = english.optJSONObject(i) ?: continue
+            sb.append("• ").append(e.optString("field"))
+            val v = e.optString("value")
+            if (v.isNotEmpty()) sb.append(" = ").append(v.take(80))
+            sb.append("\n   ").append(e.optString("meaning")).append('\n')
+        }
+        sb.append("\n▌ RAW / HIDDEN DATA\n")
+        sb.append("label: ").append(s.optString("label_type", "unknown")).append('\n')
+        sb.append("aim: ").append(s.optString("aim_id", "unknown")).append('\n')
+        sb.append("source: ").append(s.optString("source", "unknown")).append('\n')
+        sb.append("mode: ").append(s.optString("decoded_mode", "unknown")).append('\n')
+        sb.append("len: ").append(s.optInt("length")).append(" chars / ").append(s.optInt("byte_length")).append(" bytes\n")
+        sb.append("charset: ").append(s.optString("charset")).append('\n')
+        sb.append("visible: ").append(s.optString("visible_text").take(600)).append('\n')
+        val segs = s.optJSONArray("decode_data")
+        if (segs != null) {
+            for (i in 0 until minOf(segs.length(), 4)) {
+                val seg = segs.optJSONObject(i) ?: continue
+                sb.append("--- decode_data[").append(i).append("] ").append(seg.optInt("byte_length")).append(" bytes ---\n")
+                // Cap the hex dump so a big PDF417 doesn't stall text layout; full dump via Copy JSON.
+                val hex = seg.optString("hex_dump")
+                sb.append(if (hex.length > 1800) hex.take(1800) + "\n… (truncated — Copy JSON for full dump)" else hex).append('\n')
+            }
+        }
+        val parsers = s.optJSONArray("parsers")
+        if (parsers != null) {
+            sb.append("--- parsers ---\n")
+            for (i in 0 until parsers.length()) {
+                sb.append((parsers.optJSONObject(i)?.toString(1) ?: "").take(1500)).append('\n')
+            }
+        }
+        s.optString("structure_note").takeIf { it.isNotEmpty() }?.let {
+            sb.append("note: ").append(it).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun selectedScanJson(): JSONObject? {
+        val arr = ScanHistoryStore.latest(ScanHistoryStore.MAX)
+        if (selectedScanTs >= 0) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i); if (o?.optLong("ts") == selectedScanTs) return o
+        }
+        return arr.optJSONObject(0)
+    }
+
+    private fun copySelectedScan() {
+        val detail = selectedScanJson()
+        if (detail == null) {
+            Toast.makeText(this, "No scan to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cm = getSystemService(ClipboardManager::class.java)
+        cm.setPrimaryClip(ClipData.newPlainText("scan", detail.toString(2)))
+        Toast.makeText(this, "Scan JSON copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearScans() {
+        ScanHistoryStore.clear(applicationContext)
+        selectedScanTs = -1L
+        lastScanVersion = -1; refreshStatus()
+        Toast.makeText(this, "Scan history cleared", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun repairDataWedge() {
+        binding.datawedgeStatusText.text = "DataWedge: repairing profile (broker + Profile0 intent output)…"
+        ioSafe {
+            val r = DataWedgeRepair.apply(applicationContext)
+            runOnUiThread {
+                binding.datawedgeStatusText.text = "DataWedge repair sent ${r.optJSONArray("steps")?.length() ?: 0} commands → " +
+                    "${r.optString("scan_action")}.\nNow scan any barcode — it should appear in SCAN OUTPUT within a second."
+                Toast.makeText(this, "DataWedge profile repaired — scan something to test", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun roamHarden() {
+        Toast.makeText(this, "Roam-proof setup running…", Toast.LENGTH_SHORT).show()
+        ioSafe {
+            val r = RoamKeeper.hardenNow(applicationContext)
+            runOnUiThread {
+                AlertDialog.Builder(this)
+                    .setTitle("Roam-proof setup")
+                    .setMessage(
+                        "Tailscale always-on VPN: ${r.optString("always_on_vpn")}\n" +
+                            "Doze allowlist: ${r.optString("doze")}\n" +
+                            "Listening on: ${r.optJSONObject("recover")?.optJSONArray("bound")?.join(", ")?.replace("\"", "")}\n\n" +
+                            "After a reboot or a new Wi-Fi, Muse/AIs reach the broker directly at http://<tailscale-ip>:17999 " +
+                            "as long as Tailscale is connected. Keep Tailscale set to Always-on VPN."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+                refreshStatus()
+            }
+        }
+    }
+
+    private val scanListener: (JSONObject) -> Unit = { json ->
+        val ts = json.optLong("ts")
+        runOnUiThread {
+            selectedScanTs = ts
+            refreshStatus()
+            if (UiPrefs.isPanelVisible(this, "scans")) {
+                binding.scroll.post { binding.scroll.smoothScrollTo(0, binding.panelScans.top) }
+            }
+        }
+    }
+
     override fun onDestroy() {
+        handler.removeCallbacks(ticker)
+        talk?.shutdown()
+        io.shutdownNow()
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
         super.onDestroy()
     }
 
-    private fun requestShizukuPermission() {
-        when (val result = ShizukuGateway.requestPermission(REQUEST_CODE_SHIZUKU)) {
-            PermissionRequestResult.AlreadyGranted -> refreshStatus()
-            PermissionRequestResult.Requested -> Toast.makeText(
-                this,
-                "Shizuku permission request sent.",
-                Toast.LENGTH_SHORT
-            ).show()
-            PermissionRequestResult.BinderUnavailable -> Toast.makeText(
-                this,
-                "Shizuku service is not connected.",
-                Toast.LENGTH_LONG
-            ).show()
-            PermissionRequestResult.RationaleRequired -> Toast.makeText(
-                this,
-                "Enable permission from the Shizuku app, then try again.",
-                Toast.LENGTH_LONG
-            ).show()
-            is PermissionRequestResult.Failed -> Toast.makeText(
-                this,
-                "Permission request failed: ${result.cause?.message ?: "unknown"}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-        refreshStatus()
-    }
+    // ---------------- helpers ----------------
 
-    private fun refreshStatus() {
-        val scopes = admin.getActiveScopes()
-        val server = BrokerServer.get()
-        val serverStatus = when {
-            server == null -> "not started"
-            server.isRunning -> "listening ${BrokerServer.HOST}:${server.port} (MCP)"
-            else -> "stopped"
-        }
-        val a11y = if (AgentAccessibilityService.isEnabled()) "enabled" else "disabled"
+    private fun versionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (_: Exception) { "?" }
 
-        val shizuku = ShizukuGateway.status()
-        val binder = if (shizuku.binderAlive) "CONNECTED" else "NOT CONNECTED"
-        val perm = if (shizuku.permissionGranted) "GRANTED" else "NOT GRANTED"
-        val backend = when (shizuku.backendUid) {
-            0 -> "root (uid 0)"
-            2000 -> "ADB shell (uid 2000)"
-            null -> "not available"
-            else -> "uid ${shizuku.backendUid}"
-        }
+    private fun hostOf(url: String): String = runCatching { Uri.parse(url).host }.getOrNull() ?: url
 
-        binding.statusText.text = getString(
-            R.string.status_template,
-            packageName,
-            serverStatus,
-            a11y,
-            scopes.size,
-            binder,
-            perm,
-            backend
-        )
-        val dz = when {
-            !DhizukuGateway.isInstalled(this) -> "not installed"
-            DhizukuGateway.isGranted() -> "GRANTED (owner ${DhizukuGateway.ownerComponent()?.packageName ?: "?"})"
-            else -> "NOT GRANTED (${DhizukuGateway.lastPermissionResult})"
-        }
-        binding.statusText.append(getString(R.string.dhizuku_status_line, dz))
-        val pm = getSystemService(PowerManager::class.java)
-        val batt = if (pm?.isIgnoringBatteryOptimizations(packageName) == true) "exempt" else "not exempt"
-        binding.statusText.append("\nbattery opt: $batt · MCP auth: required")
-        binding.dhizukuButton.isEnabled = !DhizukuGateway.isGranted()
-        // "Delegated scopes" are Android DPM delegations (DevicePolicyManager.getDelegatedScopes) and
-        // stay empty under Dhizuku unless dhizuku_set_scopes is called. Dhizuku permission itself is a
-        // separate grant, so show it here too instead of a bare "no delegated scopes".
-        val dhizukuScopes = if (DhizukuGateway.isGranted()) {
-            runCatching { com.rosan.dhizuku.api.Dhizuku.getDelegatedScopes()?.toList() }.getOrNull().orEmpty()
-        } else emptyList()
-        val allScopes = (scopes + dhizukuScopes).distinct()
-        binding.scopesText.text = when {
-            allScopes.isNotEmpty() -> allScopes.joinToString("\n")
-            DhizukuGateway.isGranted() -> getString(R.string.no_scopes_dhizuku_granted)
-            DhizukuGateway.isInstalled(this) -> getString(R.string.no_scopes_dhizuku_pending, DhizukuGateway.lastPermissionResult)
-            else -> getString(R.string.no_scopes)
-        }
-        binding.shizukuPermissionButton.isEnabled =
-            shizuku.binderAlive && !shizuku.permissionGranted
-        binding.datawedgeStatusText.text = DataWedgeResultReceiver.lastStatusString.get()
-        if (!tokenVisible) {
-            binding.mcpTokenText.text = getString(R.string.mcp_token_hidden)
-        }
-        if (!binding.upstreamUrlInput.hasFocus()) {
-            binding.upstreamUrlInput.setText(SecurePrefs.getUpstreamMcpUrl(applicationContext))
-        }
-        if (!binding.airtableKeyInput.hasFocus()) {
-            val keySet = SecurePrefs.getAirtableApiKey(applicationContext).isNotBlank()
-            binding.airtableKeyInput.hint =
-                if (keySet) getString(R.string.airtable_key_set) else getString(R.string.airtable_key_hint)
-        }
-        if (!binding.bridgeUrlsInput.hasFocus()) {
-            val configured = SecurePrefs.BRIDGE_NAMES.mapNotNull { n ->
-                val u = SecurePrefs.getBridgeUrl(applicationContext, n)
-                if (u.isNotBlank()) "$n=$u" else null
-            }
-            if (configured.isNotEmpty()) binding.bridgeUrlsInput.setText(configured.joinToString(","))
-        }
+    private fun fmtUptime(ms: Long): String {
+        val s = ms / 1000
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        return if (h > 0) "${h}h ${m}m" else "${m}m ${s % 60}s"
     }
 
     companion object {
+        const val EXTRA_TALK_TEST = "talk_test_text"
         private const val REQUEST_CODE_SHIZUKU = 1001
+        private const val TICK_MS = 5_000L
+        private const val MIN_REFRESH_MS = 1_000L
+        private const val PROBE_INTERVAL_MS = 60_000L
+        private const val PROBE_TIMEOUT_MS = 5_000L
         @Volatile private var dhizukuAutoRequested = false
         @Volatile private var batteryPromptShown = false
     }

@@ -205,6 +205,7 @@ class UpstreamMcpRelayClient(private val context: Context) {
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json, text/event-stream")
+            setRequestProperty("ngrok-skip-browser-warning", "1")
             sessionId?.let { setRequestProperty("Mcp-Session-Id", it) }
             val token = SecurePrefs.getUpstreamMcpToken(context)
             if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")

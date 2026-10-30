@@ -7,8 +7,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -27,7 +28,13 @@ object ShellExecutor {
     private const val DEFAULT_TIMEOUT_SEC = 30L
     private const val MAX_LOG_CHARS = 64 * 1024
 
-    private val pool = Executors.newCachedThreadPool()
+    // 1.8.6: bounded — shell sessions already capped at MAX_SESSIONS.
+    private val pool = ThreadPoolExecutor(
+        2, 4, 60L, TimeUnit.SECONDS,
+        LinkedBlockingQueue(8),
+        { r -> Thread(r, "ShellExecutor").also { it.isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy()
+    )
     private val sessions = ConcurrentHashMap<String, Session>()
 
     data class Session(

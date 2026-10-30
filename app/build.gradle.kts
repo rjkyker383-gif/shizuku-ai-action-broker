@@ -11,8 +11,8 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.7.0-dev"
+        versionCode = 16
+        versionName = "1.8.6-dev"
     }
 
     buildTypes {
@@ -60,5 +60,9 @@ dependencies {
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     // WorkManager: background Airtable telemetry flush (AirtableSyncWorker)
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Command-center dashboard lists
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (android.jar's org.json is a throwing stub off-device)
+    testImplementation("org.json:json:20240303")
 }

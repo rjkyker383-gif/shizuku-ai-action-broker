@@ -65,6 +65,7 @@
         "bridge_relay",
         "airtable_log",
         "wifi_presence_scan",
+        "discovery_info",
         "zebra_wifi_config",
         "zebra_datawedge_profile",
         "zebra_scanner_control"

@@ -13,11 +13,16 @@ import com.rjkyker.shizukuai.broker.action.RiskLevel
 import com.rjkyker.shizukuai.broker.admin.DelegatedAdminActionHandler
 import com.rjkyker.shizukuai.broker.bridge.ShizukuGateway
 import com.rjkyker.shizukuai.broker.datawedge.DataWedgeQuery
+import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
 import com.rjkyker.shizukuai.broker.datawedge.WedgeSyncManager
+import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
 import com.rjkyker.shizukuai.broker.server.ActionRouter
 import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
+import com.rjkyker.shizukuai.broker.sensing.WifiDetection
+import com.rjkyker.shizukuai.broker.hotspot.HotspotManager
 import com.rjkyker.shizukuai.broker.server.BrokerServer
+import com.rjkyker.shizukuai.broker.service.BrokerPause
 import com.rjkyker.shizukuai.broker.shell.ShellExecutor
 import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
@@ -46,6 +51,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_GESTURE -> gesture(args)
                 TOOL_DHIZUKU -> dhizuku(args, confirmed)
                 TOOL_DATAWEDGE -> datawedge(args)
+                TOOL_SCAN_HISTORY -> scanHistory(args)
                 TOOL_WEDGE_SYNC -> WedgeSyncManager.control(
                     context,
                     args.optString("op", "status"),
@@ -55,10 +61,20 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_BRIDGE_RELAY -> bridgeRelay(args)
                 TOOL_AIRTABLE -> airtableLog(args)
                 TOOL_WIFI_PRESENCE -> wifiPresence(args)
+                TOOL_WIFI_DETECTION -> wifiDetection(args)
+                TOOL_HOTSPOT_START -> HotspotManager.start(context, args)
+                TOOL_HOTSPOT_STOP -> HotspotManager.stop(context)
+                TOOL_HOTSPOT_STATUS -> HotspotManager.status(context).put("ok", true)
                 TOOL_ZEBRA_WIFI -> zebraWifi(args, confirmed)
                 TOOL_ZEBRA_DW -> ZebraCapabilityLayer.datawedgeProfile(context, args)
                 TOOL_ZEBRA_SCANNER -> ZebraCapabilityLayer.scannerControl(context, args)
                 TOOL_STATUS -> systemStatus()
+                TOOL_A11Y_SCREENSHOT, TOOL_A11Y_UI_TREE, TOOL_A11Y_TAP, TOOL_A11Y_SWIPE,
+                TOOL_A11Y_TEXT, TOOL_A11Y_GLOBAL, TOOL_A11Y_CLICK_TEXT -> a11yTool(name, args)
+                TOOL_DISCOVERY -> JSONObject().put("ok", true).put("manifest", DiscoveryProvider.manifest(context))
+                TOOL_BROKER_PAUSE -> BrokerPause.setPaused(context, true)
+                TOOL_BROKER_RESUME -> BrokerPause.setPaused(context, false)
+                TOOL_BROKER_PAUSE_STATUS -> BrokerPause.status(context)
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
@@ -164,6 +180,36 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         return router.route(JSONObject().put("op", "ui_dump").put("maxNodes", max))
     }
 
+    // ---------------- a11y_* (accessibility only, no ADB / Shizuku) ----------------
+
+    private fun a11yTool(name: String, args: JSONObject): JSONObject {
+        val a = AgentAccessibilityService.instance
+            ?: return err("accessibility service not connected",
+                "enable Shizuku AI Broker in Settings > Accessibility (or accessibility_ensure on the Muse bridge)")
+        fun num(k: String): Double = args.optDouble(k, Double.NaN)
+        return when (name) {
+            TOOL_A11Y_SCREENSHOT -> a.screenshot(
+                args.optInt("max_width", 720), args.optString("format", "png"), args.optInt("quality", 80))
+            TOOL_A11Y_UI_TREE -> a.uiTree(args.optInt("max_nodes", 400), args.optBoolean("all_windows", false))
+            TOOL_A11Y_TAP -> {
+                val x = num("x"); val y = num("y")
+                if (x.isNaN() || y.isNaN()) return err("a11y_tap requires x,y")
+                JSONObject().put("ok", a.tap(x.toFloat(), y.toFloat(), args.optLong("duration_ms", 60L)))
+                    .put("via", "a11y.dispatchGesture").put("x", x).put("y", y)
+            }
+            TOOL_A11Y_SWIPE -> {
+                val x1 = num("x1"); val y1 = num("y1"); val x2 = num("x2"); val y2 = num("y2")
+                if (x1.isNaN() || y1.isNaN() || x2.isNaN() || y2.isNaN()) return err("a11y_swipe requires x1,y1,x2,y2")
+                JSONObject().put("ok", a.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(),
+                    args.optLong("duration_ms", 300L).coerceIn(1L, 10_000L))).put("via", "a11y.dispatchGesture")
+            }
+            TOOL_A11Y_TEXT -> a.setTextFocused(args.optString("text", "").take(5000))
+            TOOL_A11Y_GLOBAL -> a.globalAction(args.optString("action", ""))
+            TOOL_A11Y_CLICK_TEXT -> a.clickText(args.optString("text", ""), args.optBoolean("exact", false), args.optInt("index", 0))
+            else -> err("unknown a11y tool $name")
+        }
+    }
+
     // ---------------- perform_gesture ----------------
 
     private fun gesture(args: JSONObject): JSONObject {
@@ -265,6 +311,13 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         return router.route(body).put("risk", risk.name).put("mapped_op", mapped)
     }
 
+
+    private fun scanHistory(args: JSONObject): JSONObject {
+        val limit = args.optInt("limit", 50).coerceIn(1, 200)
+        ScanHistoryStore.ensureLoaded(context)
+        return ScanHistoryStore.snapshot(limit)
+    }
+
     // ---------------- datawedge_query ----------------
 
     private fun datawedge(args: JSONObject): JSONObject {
@@ -328,6 +381,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         return AirtableSyncWorker.log(context, base, table, fields)
     }
 
+    // ---------------- wifi_detection (1.8.5, default ON) ----------------
+
+    private fun wifiDetection(args: JSONObject): JSONObject = when (args.optString("op", "status")) {
+        "on" -> { WifiDetection.setEnabled(context, true); WifiDetection.stateJson(context).put("ok", true) }
+        "off" -> { WifiDetection.setEnabled(context, false); WifiDetection.stateJson(context).put("ok", true) }
+        "scan" -> WifiDetection.scanAps(context, requestFresh = true).put("state", WifiDetection.stateJson(context))
+        else -> WifiDetection.stateJson(context, includeAps = args.optBoolean("include_aps", true)).put("ok", true)
+    }
+
     // ---------------- wifi_presence_scan ----------------
 
     private fun wifiPresence(args: JSONObject): JSONObject {
@@ -359,6 +421,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         }
         return JSONObject()
             .put("ok", true)
+            .put("paused", BrokerPause.isPaused(context))
             .put("package", context.packageName)
             .put("version", versionName())
             .put("sdk_int", Build.VERSION.SDK_INT)
@@ -433,23 +496,43 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_GESTURE = "perform_gesture"
         const val TOOL_DHIZUKU = "manage_dhizuku_policy"
         const val TOOL_DATAWEDGE = "datawedge_query"
+        const val TOOL_SCAN_HISTORY = "scan_history"
         const val TOOL_WEDGE_SYNC = "wedge_sync_control"
         const val TOOL_UPSTREAM = "upstream_mcp_relay"
         const val TOOL_STATUS = "get_system_status"
         const val TOOL_BRIDGE_RELAY = "bridge_relay"
         const val TOOL_AIRTABLE = "airtable_log"
         const val TOOL_WIFI_PRESENCE = "wifi_presence_scan"
+        const val TOOL_WIFI_DETECTION = "wifi_detection"
+        const val TOOL_HOTSPOT_START = "hotspot_start"
+        const val TOOL_HOTSPOT_STOP = "hotspot_stop"
+        const val TOOL_HOTSPOT_STATUS = "hotspot_status"
         const val TOOL_ZEBRA_WIFI = "zebra_wifi_config"
         const val TOOL_ZEBRA_DW = "zebra_datawedge_profile"
         const val TOOL_ZEBRA_SCANNER = "zebra_scanner_control"
+        const val TOOL_DISCOVERY = "discovery_info"
+        const val TOOL_BROKER_PAUSE = "broker_pause"
+        const val TOOL_BROKER_RESUME = "broker_resume"
+        const val TOOL_BROKER_PAUSE_STATUS = "broker_pause_status"
+        const val TOOL_A11Y_SCREENSHOT = "a11y_screenshot"
+        const val TOOL_A11Y_UI_TREE = "a11y_ui_tree"
+        const val TOOL_A11Y_TAP = "a11y_tap"
+        const val TOOL_A11Y_SWIPE = "a11y_swipe"
+        const val TOOL_A11Y_TEXT = "a11y_text"
+        const val TOOL_A11Y_GLOBAL = "a11y_global"
+        const val TOOL_A11Y_CLICK_TEXT = "a11y_click_text"
+        val A11Y_TOOLS = setOf(TOOL_A11Y_SCREENSHOT, TOOL_A11Y_UI_TREE, TOOL_A11Y_TAP, TOOL_A11Y_SWIPE,
+            TOOL_A11Y_TEXT, TOOL_A11Y_GLOBAL, TOOL_A11Y_CLICK_TEXT)
         private const val KEYCODE_APP_SWITCH = 187
 
         val TOOL_NAMES = setOf(
             TOOL_EXEC_SHELL, TOOL_DUMP_UI, TOOL_GESTURE, TOOL_DHIZUKU,
-            TOOL_DATAWEDGE, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
-            TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE,
-            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER
-        )
+            TOOL_DATAWEDGE, TOOL_SCAN_HISTORY, TOOL_WEDGE_SYNC, TOOL_UPSTREAM, TOOL_STATUS,
+            TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE, TOOL_WIFI_DETECTION,
+            TOOL_HOTSPOT_START, TOOL_HOTSPOT_STOP, TOOL_HOTSPOT_STATUS,
+            TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY,
+            TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS
+        ) + A11Y_TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
 
@@ -528,6 +611,15 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             )
             .put(
                 tool(
+                    TOOL_SCAN_HISTORY,
+                    "Last DataWedge scans with full decode detail (symbology, AIM, hex, parsers). LOW-risk, auth required. Newest first.",
+                    JSONObject()
+                        .put("limit", prop("integer", "Max scans to return (1-200, default 50)")),
+                    emptyList()
+                )
+            )
+            .put(
+                tool(
                     TOOL_DATAWEDGE,
                     "Zebra DataWedge live query or soft_scan/switch_profile/create_profile/set_config. Alias of wedge reads.",
                     JSONObject()
@@ -573,11 +665,11 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             .put(
                 tool(
                     TOOL_BRIDGE_RELAY,
-                    "Relay a JSON-RPC MCP call to a named bridge (magic|war|ether|upstream). Each bridge URL " +
-                        "comes from the app settings (nothing hardcoded); the bridge is health-checked first and " +
+                    "Relay a JSON-RPC MCP call to a named bridge (android|spark|ether|war|magic|upstream). Each bridge URL " +
+                        "comes from the app settings (prefilled with the public mesh default, editable; no token baked in); the bridge is health-checked first and " +
                         "an unreachable bridge returns ok=false instead of a faked result.",
                     JSONObject()
-                        .put("bridge", enumProp(listOf("magic", "war", "ether", "upstream")))
+                        .put("bridge", enumProp(listOf("android", "spark", "ether", "war", "magic", "upstream")))
                         .put("method", prop("string", "JSON-RPC method, default tools/call"))
                         .put("params", JSONObject().put("type", "object").put("description", "JSON-RPC params"))
                         .put("timeout_ms", prop("integer", "default 15000")),
@@ -609,6 +701,42 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     JSONObject()
                         .put("duration_ms", prop("integer", "sample window, 1000-30000, default 4000")),
                     emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_WIFI_DETECTION,
+                    "Wi-Fi detection (default ON): background loop that lists nearby access points with RSSI as heard by " +
+                        "this phone, plus the near-device presence score. op=status (default, include_aps) | scan (fresh) | on | off. " +
+                        "Near-device RSSI only: no CSI, not through-wall, cannot identify/count/locate people.",
+                    JSONObject()
+                        .put("op", JSONObject().put("type", "string").put("enum", JSONArray(listOf("status", "scan", "on", "off"))))
+                        .put("include_aps", prop("boolean", "include the AP list in status (default true)")),
+                    emptyList()
+                )
+            )
+            .put(
+                tool(
+                    TOOL_HOTSPOT_START,
+                    "Start the Hotspot / Extender: privileged soft AP (cmd wifi start-softap via Shizuku) that shares the " +
+                        "phone's internet (repeats Wi-Fi when STA+AP concurrency is supported, else mobile data). Falls back to a " +
+                        "LocalOnlyHotspot with NO internet. Default SSID TC22-Extender, WPA2, phone-generated passphrase (masked here). " +
+                        HotspotManager.HONEST_NOTE,
+                    JSONObject()
+                        .put("ssid", prop("string", "1-32 chars [A-Za-z0-9 _.-], default TC22-Extender"))
+                        .put("band", JSONObject().put("type", "string").put("enum", JSONArray(listOf("2", "5", "any"))))
+                        .put("security", JSONObject().put("type", "string").put("enum", JSONArray(listOf("wpa2", "wpa3"))))
+                        .put("allow_local_only", prop("boolean", "fall back to a no-internet local-only hotspot (default true)")),
+                    emptyList()
+                )
+            )
+            .put(tool(TOOL_HOTSPOT_STOP, "Stop the Hotspot / Extender (soft AP and any local-only hotspot).", JSONObject(), emptyList()))
+            .put(
+                tool(
+                    TOOL_HOTSPOT_STATUS,
+                    "Hotspot / Extender status: on/off, mode, connected clients, upstream (wifi/cellular), AP band+channel, " +
+                        "upstream RSSI, STA+AP concurrency (repeater) support. Passphrase masked. " + HotspotManager.HONEST_NOTE,
+                    JSONObject(), emptyList()
                 )
             )
             .put(
@@ -646,6 +774,51 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                     listOf("op")
                 )
             )
+            .put(
+                tool(
+                    TOOL_DISCOVERY,
+                    "Return the broker's discovery manifest: app/device/version, every connection method " +
+                        "(loopback, Tailscale, public mesh bridges, upstream, mDNS) and tool names + risk. No secrets.",
+                    JSONObject(),
+                    emptyList()
+                )
+            )
+
+            .put(tool(TOOL_A11Y_SCREENSHOT,
+                "Screenshot via AccessibilityService.takeScreenshot (Android 11+, no ADB). Returns image_base64 + an MCP image. LOW-risk, auth required.",
+                JSONObject().put("max_width", prop("integer", "160-1440, default 720 (downscaled)"))
+                    .put("format", enumProp(listOf("png", "jpeg")))
+                    .put("quality", prop("integer", "10-100 (jpeg), default 80")), emptyList()))
+            .put(tool(TOOL_A11Y_UI_TREE,
+                "Window node tree (nested JSON: text, desc, id, class, bounds [l,t,r,b], clickable, focused). No ADB. LOW-risk.",
+                JSONObject().put("max_nodes", prop("integer", "1-3000, default 400"))
+                    .put("all_windows", prop("boolean", "include every interactive window (status bar, IME…)")), emptyList()))
+            .put(tool(TOOL_A11Y_TAP, "Tap at screen x,y via dispatchGesture (no ADB). MEDIUM.",
+                JSONObject().put("x", prop("number")).put("y", prop("number")).put("duration_ms", prop("integer", "default 60")),
+                listOf("x", "y")))
+            .put(tool(TOOL_A11Y_SWIPE, "Swipe x1,y1 -> x2,y2 via dispatchGesture (no ADB). MEDIUM.",
+                JSONObject().put("x1", prop("number")).put("y1", prop("number")).put("x2", prop("number")).put("y2", prop("number"))
+                    .put("duration_ms", prop("integer", "default 300")), listOf("x1", "y1", "x2", "y2")))
+            .put(tool(TOOL_A11Y_TEXT, "ACTION_SET_TEXT on the focused input (replaces its text). No ADB. MEDIUM.",
+                JSONObject().put("text", prop("string")), listOf("text")))
+            .put(tool(TOOL_A11Y_GLOBAL, "Global action BACK|HOME|RECENTS|NOTIFICATIONS|QUICK_SETTINGS (no ADB). MEDIUM.",
+                JSONObject().put("action", enumProp(listOf("BACK", "HOME", "RECENTS", "NOTIFICATIONS", "QUICK_SETTINGS"))),
+                listOf("action")))
+            .put(tool(TOOL_A11Y_CLICK_TEXT,
+                "Find a node by text/content-description (contains, or exact=true) and click it (clickable ancestor, else tap its centre). MEDIUM.",
+                JSONObject().put("text", prop("string")).put("exact", prop("boolean")).put("index", prop("integer", "which match, default 0")),
+                listOf("text")))
+
+
+            .put(tool(TOOL_BROKER_PAUSE,
+                "Pause background loops (Wi-Fi detection etc.) but keep the MCP server + accessibility alive. Soft.",
+                JSONObject(), emptyList()))
+            .put(tool(TOOL_BROKER_RESUME,
+                "Resume background loops after broker_pause.",
+                JSONObject(), emptyList()))
+            .put(tool(TOOL_BROKER_PAUSE_STATUS,
+                "Whether the broker is paused and whether Wi-Fi detection is running.",
+                JSONObject(), emptyList()))
 
         private fun tool(name: String, description: String, props: JSONObject, required: List<String>): JSONObject {
             val schema = JSONObject().put("type", "object").put("properties", props)

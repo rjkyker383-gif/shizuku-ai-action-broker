@@ -56,21 +56,50 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
     private fun handleScan(context: Context, intent: Intent) {
         val data = intent.getStringExtra(EXTRA_DATA_STRING)
             ?: intent.getStringExtra(EXTRA_DATA_STRING_ALT) ?: ""
-        val label = intent.getStringExtra(EXTRA_LABEL_TYPE) ?: ""
+        val label = intent.getStringExtra(EXTRA_LABEL_TYPE)
+            ?: intent.getStringExtra("com.symbol.datawedge.label_type") ?: ""
         val source = intent.getStringExtra(EXTRA_SOURCE)
             ?: intent.getStringExtra(EXTRA_SOURCE_ALT) ?: ""
-        val json = JSONObject()
-            .put("type", "scan")
-            .put("action", intent.action)
-            .put("ts", System.currentTimeMillis())
-            .put("data_string", data)
-            .put("label_type", label)
-            .put("source", source)
+        val aim = intent.getStringExtra(EXTRA_AIM_ID)
+            ?: intent.getStringExtra("com.symbol.datawedge.aim_id")
+        val decodedMode = intent.getStringExtra(EXTRA_DECODED_MODE)
+            ?: intent.getStringExtra("com.symbol.datawedge.decoded_mode")
+        val segments = ArrayList<ByteArray>()
+        // Primary decode_data byte[] array-list / byte[][]
+        @Suppress("DEPRECATION")
+        val decodeData = intent.extras?.get("com.symbol.datawedge.decode_data")
+        when (decodeData) {
+            is Array<*> -> decodeData.forEach { v ->
+                when (v) {
+                    is ByteArray -> segments.add(v)
+                    is Array<*> -> v.filterIsInstance<ByteArray>().forEach { segments.add(it) }
+                }
+            }
+            is ByteArray -> segments.add(decodeData)
+            is ArrayList<*> -> decodeData.forEach { v -> if (v is ByteArray) segments.add(v) }
+        }
+        // Also accept a single byte[] under decode_data[0]-style extras some DW builds use
+        intent.getByteArrayExtra("com.symbol.datawedge.decode_data")?.let {
+            if (segments.isEmpty()) segments.add(it)
+        }
+        val json = ScanParsers.enrich(
+            dataString = data,
+            labelType = label,
+            source = source,
+            decodeSegments = segments,
+            aimId = aim,
+            decodedMode = decodedMode,
+        ).put("action", intent.action)
         if (!DataWedgeResultStore.record(context.applicationContext, json)) return
+        ScanHistoryStore.add(context.applicationContext, json)
         lastEventJson.set(json)
         lastScanJson.set(json)
-        lastStatusString.set("scan: $label | $data")
-        Log.i(TAG, "SCAN: label=$label data=$data source=$source")
+        lastStatusString.set("scan: $label | ${ScanParsers.renderVisible(data).take(80)}")
+        scanCount.incrementAndGet()
+        lastScanAt = System.currentTimeMillis()
+        lastScanPath = if (this === dynamicReceiver) "dynamic" else "manifest"
+        for (l in scanListeners) runCatching { l(json) }
+        Log.i(TAG, "SCAN: label=$label len=${data.length} segs=${segments.size} source=$source")
     }
 
     companion object {
@@ -81,6 +110,9 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
         const val EXTRA_SOURCE = "com.symbol.datawedge.source"
         const val EXTRA_DATA_STRING_ALT = "com.symbol.datawedge.data"
         const val EXTRA_SOURCE_ALT = "com.symbol.datawedge.source_uri"
+        const val EXTRA_AIM_ID = "com.symbol.datawedge.aimid"
+        const val EXTRA_DECODED_MODE = "com.symbol.datawedge.decoded_mode"
+        const val EXTRA_DECODE_DATA = "com.symbol.datawedge.decode_data"
 
         private const val P = "com.symbol.datawedge.api."
         /** RESULT_* extra -> short kind used for file names / query keys. */
@@ -96,6 +128,15 @@ class DataWedgeResultReceiver : BroadcastReceiver() {
         val lastStatusString = AtomicReference("DataWedge: no events yet")
 
         private val registered = AtomicBoolean(false)
+
+        /** Diagnostics (no payload contents): count / time / which receiver path delivered. */
+        val scanCount = java.util.concurrent.atomic.AtomicInteger(0)
+        @Volatile var lastScanAt: Long = 0L
+        @Volatile var lastScanPath: String = "none"
+        fun isDynamicRegistered(): Boolean = registered.get()
+
+        /** UI listeners (called on the receiver's thread — post to main yourself). */
+        val scanListeners = java.util.concurrent.CopyOnWriteArrayList<(JSONObject) -> Unit>()
         private var dynamicReceiver: DataWedgeResultReceiver? = null
 
         /** Register a runtime receiver for RESULT_ACTION + scan action (idempotent). */

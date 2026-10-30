@@ -36,6 +36,7 @@ object ActionAllowList {
         "datawedge_last" to RiskLevel.LOW,
         "datawedge_query" to RiskLevel.LOW,
         "datawedge_results" to RiskLevel.LOW,
+        "scan_history" to RiskLevel.LOW,
         // Dhizuku device-owner ops, 1.5.0: non-destructive and reversible only
         "dhizuku_status" to RiskLevel.LOW,
         "dhizuku_connect" to RiskLevel.LOW,
@@ -49,6 +50,13 @@ object ActionAllowList {
         // MCP tool names — parity with POST /mcp tools/call; risk also enforced in McpToolExecutor
         "exec_shell" to RiskLevel.HIGH,
         "dump_ui_hierarchy" to RiskLevel.LOW,
+        "a11y_screenshot" to RiskLevel.LOW,
+        "a11y_ui_tree" to RiskLevel.LOW,
+        "a11y_tap" to RiskLevel.MEDIUM,
+        "a11y_swipe" to RiskLevel.MEDIUM,
+        "a11y_text" to RiskLevel.MEDIUM,
+        "a11y_global" to RiskLevel.MEDIUM,
+        "a11y_click_text" to RiskLevel.MEDIUM,
         "perform_gesture" to RiskLevel.MEDIUM,
         "manage_dhizuku_policy" to RiskLevel.MEDIUM,
         "get_system_status" to RiskLevel.LOW,
@@ -58,9 +66,19 @@ object ActionAllowList {
         "bridge_relay" to RiskLevel.MEDIUM,
         "airtable_log" to RiskLevel.MEDIUM,
         "wifi_presence_scan" to RiskLevel.LOW,
+        // 1.8.5 Wi-Fi detection (default on) + Hotspot / Extender
+        "wifi_detection" to RiskLevel.LOW,
+        "broker_pause" to RiskLevel.LOW,
+        "broker_resume" to RiskLevel.LOW,
+        "broker_pause_status" to RiskLevel.LOW,
+        "hotspot_status" to RiskLevel.LOW,
+        "hotspot_start" to RiskLevel.MEDIUM,
+        "hotspot_stop" to RiskLevel.MEDIUM,
         "zebra_wifi_config" to RiskLevel.HIGH,
         "zebra_datawedge_profile" to RiskLevel.MEDIUM,
         "zebra_scanner_control" to RiskLevel.MEDIUM,
+        // 1.8.0 AI discovery manifest, read-only
+        "discovery_info" to RiskLevel.LOW,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,
