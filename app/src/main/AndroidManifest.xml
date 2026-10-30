@@ -61,6 +61,24 @@
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
+        <!-- 1.8.8 privileged server binder handoff (Shizuku-style). Code also enforces uid 0/2000. -->
+        <provider
+            android:name=".priv.PrivBinderProvider"
+            android:authorities="${applicationId}.priv"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- 1.8.8 Dhizuku-style delegation to approved client apps (allow-list + on-device consent). -->
+        <service
+            android:name=".delegation.BrokerDelegationService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rjkyker.shizukuai.broker.DELEGATION" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

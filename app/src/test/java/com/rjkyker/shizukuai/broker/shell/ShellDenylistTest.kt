@@ -47,3 +47,15 @@ class ShellDenylistTest {
         assertFalse(ShellDenylist.check("bugreport").allowed)
     }
 }
+
+class ShellDenylistLockout188Test {
+    @org.junit.Test fun lockoutShellFormsDenied() {
+        listOf("locksettings set-pin 1234", "locksettings clear --old 1234", "dpm remove-active-admin x/.R",
+            "dpm set-device-owner x/.R", "settings put global adb_enabled 0").forEach {
+            org.junit.Assert.assertFalse(it, ShellDenylist.check(it).allowed)
+        }
+        listOf("locksettings get-disabled", "dpm list-owners", "settings get global adb_enabled", "id", "getprop ro.product.model").forEach {
+            org.junit.Assert.assertTrue(it, ShellDenylist.check(it).allowed)
+        }
+    }
+}

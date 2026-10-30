@@ -19,6 +19,12 @@ object ShellDenylist {
         Regex("""(?i)cmd\s+telecom\b""") to "telecom commands are forbidden",
         Regex("""(?i)settings\s+put\s+secure\s+sms_""") to "SMS settings writes are forbidden",
         Regex("""(?i)\breboot\s+-p\b|\brecovery\b""") to "power-off / recovery is forbidden",
+        // 1.8.8 lockout-risk shell equivalents of LOCKOUT/FORBIDDEN owner_policy ops
+        Regex("""(?i)\blocksettings\s+(set-pin|set-password|set-pattern|clear|set-disabled)\b""") to
+            "locksettings password changes are forbidden (lockout risk)",
+        Regex("""(?i)\bdpm\s+(remove-active-admin|set-device-owner|set-profile-owner|force-remove|mark-profile-owner-on-organization-owned-device)\b""") to
+            "dpm owner/admin changes are forbidden",
+        Regex("""(?i)settings\s+put\s+global\s+adb_enabled\s+0""") to "disabling ADB is forbidden (lockout risk)",
         // dumpsys freezes (bare or AMS-holding services)
         Regex("""(?i)\bdumpsys\b\s*($|[;|&])""") to "bare dumpsys is forbidden (freezes system_server)",
         Regex("""(?i)\bdumpsys\s+(activity|jobscheduler|notification|procstats|cpuinfo)\b""") to

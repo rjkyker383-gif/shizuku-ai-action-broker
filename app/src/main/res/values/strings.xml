@@ -84,4 +84,12 @@
     <string name="broker_pause_label">Pause broker (stop background loops; MCP stays up)</string>
     <string name="wifi_detection_label">Wi-Fi detection (nearby AP signal + presence)</string>
     <string name="hotspot_note">Shares this phone\'s internet as "TC22-Extender" (WPA2, password made on this phone). If the phone can keep Wi-Fi and the hotspot on together it repeats your Wi-Fi; otherwise it shares mobile data. It can\'t boost other phones\' radios. It helps when the TC22 is placed where the signal is stronger. Wi-Fi detection only measures signal strength at this phone: no through-wall view, no tracking of people.</string>
+    <string name="panel_owner">◉ DEVICE OWNER · OWNDROID PARITY · PRIV SERVER</string>
+    <string name="owner_probe">Feature probe (read-only)</string>
+    <string name="owner_run_op">Run policy op…</string>
+    <string name="priv_start">Start privileged server (via Shizuku)</string>
+    <string name="priv_copy_adb">Copy ADB bootstrap command</string>
+    <string name="priv_stop">Stop privileged server</string>
+    <string name="delegation_manage">Delegated client apps…</string>
+    <string name="owner_idle">Policies run through the Dhizuku device owner. LOCKOUT ops are dashboard-only and ask for confirmation. Wipe / reset password / remove owner are not implemented.</string>
 </resources>

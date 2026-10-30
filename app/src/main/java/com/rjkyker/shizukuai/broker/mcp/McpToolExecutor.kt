@@ -17,6 +17,10 @@ import com.rjkyker.shizukuai.broker.datawedge.ScanHistoryStore
 import com.rjkyker.shizukuai.broker.datawedge.WedgeSyncManager
 import com.rjkyker.shizukuai.broker.discovery.DiscoveryProvider
 import com.rjkyker.shizukuai.broker.dhizuku.DhizukuGateway
+import com.rjkyker.shizukuai.broker.delegation.BrokerDelegationService
+import com.rjkyker.shizukuai.broker.owner.OwnerPolicyCatalog
+import com.rjkyker.shizukuai.broker.owner.OwnerPolicyEngine
+import com.rjkyker.shizukuai.broker.priv.PrivServiceClient
 import com.rjkyker.shizukuai.broker.server.ActionRouter
 import com.rjkyker.shizukuai.broker.sensing.WifiPresenceEngine
 import com.rjkyker.shizukuai.broker.sensing.WifiDetection
@@ -77,10 +81,51 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_BROKER_PAUSE -> BrokerPause.setPaused(context, true)
                 TOOL_BROKER_RESUME -> BrokerPause.setPaused(context, false)
                 TOOL_BROKER_PAUSE_STATUS -> BrokerPause.status(context)
+                TOOL_OWNER_POLICY -> OwnerPolicyEngine.run(
+                    context, args.optString("op", "probe"), args, OwnerPolicyCatalog.Caller.MCP, confirmed
+                )
+                TOOL_PRIV -> privService(args, confirmed)
+                TOOL_DELEGATION -> clientDelegation(args)
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
             err("$name failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    // ---------------- 1.8.8 priv_service / client_delegation ----------------
+
+    private fun privService(args: JSONObject, confirmed: Boolean): JSONObject =
+        when (args.optString("op", "status").lowercase()) {
+            "status" -> PrivServiceClient.status(context)
+            "adb_command" -> {
+                runCatching { PrivServiceClient.writeScript(context) }
+                JSONObject().put("ok", true).put("adb_command", PrivServiceClient.adbCommand(context))
+                    .put("note", PrivServiceClient.HONEST_NOTE)
+            }
+            "start" -> PrivServiceClient.start(context)
+            "stop" -> PrivServiceClient.stop()
+            "getprop" -> PrivServiceClient.getprop(args.optString("key", "ro.product.model"))
+            "exec" -> {
+                if (!confirmed) err("priv_service exec is HIGH risk; resend with confirm=true")
+                else {
+                    val cmd = args.optString("command", args.optString("cmd", ""))
+                    if (cmd.isBlank()) err("command required")
+                    else PrivServiceClient.exec(cmd, args.optInt("timeout_sec", 30))
+                }
+            }
+            else -> err("priv_service op must be status|start|stop|exec|getprop|adb_command")
+        }
+
+    private fun clientDelegation(args: JSONObject): JSONObject {
+        val reg = BrokerDelegationService.registry(context)
+        val pkg = args.optString("package", "")
+        return when (args.optString("op", "list").lowercase()) {
+            "list" -> reg.toJson()
+            "deny" -> JSONObject().put("ok", reg.deny(pkg, System.currentTimeMillis())).put("package", pkg)
+            "revoke" -> JSONObject().put("ok", reg.revoke(pkg)).put("package", pkg)
+            "approve" -> err("approve is on-device only: open the broker dashboard > Delegated clients")
+            else -> err("client_delegation op must be list|deny|revoke")
         }
     }
 
@@ -553,6 +598,9 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
         const val TOOL_BROKER_PAUSE = "broker_pause"
         const val TOOL_BROKER_RESUME = "broker_resume"
         const val TOOL_BROKER_PAUSE_STATUS = "broker_pause_status"
+        const val TOOL_OWNER_POLICY = "owner_policy"
+        const val TOOL_PRIV = "priv_service"
+        const val TOOL_DELEGATION = "client_delegation"
         const val TOOL_A11Y_SCREENSHOT = "a11y_screenshot"
         const val TOOL_A11Y_UI_TREE = "a11y_ui_tree"
         const val TOOL_A11Y_TAP = "a11y_tap"
@@ -570,7 +618,8 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             TOOL_BRIDGE_RELAY, TOOL_AIRTABLE, TOOL_WIFI_PRESENCE, TOOL_WIFI_DETECTION,
             TOOL_HOTSPOT_START, TOOL_HOTSPOT_STOP, TOOL_HOTSPOT_STATUS,
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY,
-            TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS
+            TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS,
+            TOOL_OWNER_POLICY, TOOL_PRIV, TOOL_DELEGATION
         ) + A11Y_TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
@@ -850,6 +899,38 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 listOf("text")))
 
 
+            .put(tool(TOOL_OWNER_POLICY,
+                "OwnDroid-parity device-owner policy through Dhizuku. op=probe (read-only feature probe) | features " +
+                    "(OwnDroid inventory) | app_info | restrictions | ... Tiers: READ/MEDIUM run; HIGH needs confirm=true; " +
+                    "LOCKOUT ops (camera, lock_task_packages, always_on_vpn, permitted_accessibility/input_methods, " +
+                    "keyguard_disabled, lockout_restriction e.g. no_debugging_features) are DENIED over MCP even with confirm " +
+                    "(dashboard only). wipe/factory reset/reset password/remove owner are not implemented. " +
+                    "Toggles need an explicit value=true|false.",
+                JSONObject()
+                    .put("op", enumProp(OwnerPolicyCatalog.OPS.filterValues {
+                        it != OwnerPolicyCatalog.Tier.LOCKOUT }.keys.toList()))
+                    .put("package", prop("string")).put("permission", prop("string"))
+                    .put("state", enumProp(listOf("granted", "denied", "default")))
+                    .put("restriction", prop("string", "UserManager key, e.g. no_config_bluetooth"))
+                    .put("value", prop("boolean", "target state for toggles (hidden/suspended/disabled/enabled)"))
+                    .put("text", prop("string")).put("policy", prop("string")).put("mode", prop("string"))
+                    .put("host", prop("string")).put("port", prop("integer")).put("ms", prop("integer"))
+                    .put("flags", prop("integer")).put("scopes", JSONObject().put("type", "array"))
+                    .put("confirm", prop("boolean", "required for HIGH ops")),
+                listOf("op")))
+            .put(tool(TOOL_PRIV,
+                "Broker privileged server (own Shizuku-style app_process service, uid 2000, Binder). " +
+                    "op=status|start (bootstrap via Shizuku)|stop|getprop key|exec command (HIGH: confirm=true, denylist)|adb_command. " +
+                    PrivServiceClient.HONEST_NOTE,
+                JSONObject().put("op", enumProp(listOf("status", "start", "stop", "exec", "getprop", "adb_command")))
+                    .put("command", prop("string")).put("key", prop("string")).put("timeout_sec", prop("integer"))
+                    .put("confirm", prop("boolean")),
+                listOf("op")))
+            .put(tool(TOOL_DELEGATION,
+                "Dhizuku-style delegated client apps (bind action com.rjkyker.shizukuai.broker.DELEGATION). " +
+                    "op=list|deny|revoke. Approval is on-device only.",
+                JSONObject().put("op", enumProp(listOf("list", "deny", "revoke"))).put("package", prop("string")),
+                listOf("op")))
             .put(tool(TOOL_BROKER_PAUSE,
                 "Pause background loops (Wi-Fi detection etc.) but keep the MCP server + accessibility alive. Soft.",
                 JSONObject(), emptyList()))

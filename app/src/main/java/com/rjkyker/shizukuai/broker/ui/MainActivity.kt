@@ -108,6 +108,7 @@ class MainActivity : AppCompatActivity() {
             "security" to binding.panelSecurity,
             "controls" to binding.panelControls,
             "settings" to binding.panelSettings,
+            "owner" to binding.panelOwner,
             "scopes" to binding.panelScopes
         )
     }
@@ -164,6 +165,8 @@ class MainActivity : AppCompatActivity() {
         binding.repairDataWedgeButton.setOnClickListener { repairDataWedge() }
         binding.scanRepairButton.setOnClickListener { repairDataWedge() }
         binding.roamHardenButton.setOnClickListener { roamHarden() }
+        ownerPanel = OwnerPanelController(this, binding) { ioSafe(it) }.also { it.setup() }
+        if (intent?.getBooleanExtra("open_delegation", false) == true) ownerPanel?.manageClients()
         setupTalk()
         setupHotspot()
         maybeTalkTest(intent)
@@ -206,6 +209,7 @@ class MainActivity : AppCompatActivity() {
             "scans" to R.string.panel_scans,
             "talk" to R.string.panel_talk,
             "hotspot" to R.string.panel_hotspot,
+            "owner" to R.string.panel_owner,
             "scopes" to R.string.scopes_label
         )
         for ((key, _) in panels) {
@@ -965,8 +969,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startTalk() { talk?.start() }
 
+    private var ownerPanel: OwnerPanelController? = null
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra("open_delegation", false)) ownerPanel?.manageClients()
         maybeTalkTest(intent)
     }
 

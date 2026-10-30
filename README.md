@@ -301,3 +301,24 @@ A Muse-aligned denylist is enforced on **every** route (no uninstall / pm clear 
 4. Test with `{"command":"id; pwd; echo TERMUX_BRIDGE_OK","route":"termux","confirm":true}`.
 
 If Termux is missing or its permission/external-app setting is off, the bridge returns a setup error rather than claiming Termux ran the command.
+
+## 1.8.8-dev — OwnDroid parity, privileged server, client delegation
+
+- **`owner_policy`** (MCP + dashboard panel "DEVICE OWNER · OWNDROID PARITY"): about 49 device-owner ops through the
+  Dhizuku owner, modelled on [OwnDroid](https://github.com/BinTianqi/OwnDroid) (GPL-3.0, © BinTianqi). The ops were
+  reimplemented against the public DevicePolicyManager API. No OwnDroid code was copied. `op=features` lists every
+  OwnDroid feature as ADDED, PRESENT, or SKIPPED, with a reason for each.
+  Tiers: READ and MEDIUM run directly. HIGH needs `confirm=true`. **LOCKOUT** ops (camera, lock task, always-on VPN,
+  permitted a11y/IME, keyguard disable, ADB/install/VPN restrictions) are refused over MCP and Muse/AI even with
+  confirm. They run only from the on-device dashboard, and you must type the op name to confirm.
+  wipe, factory reset, reset/set password, removing the owner, and transfer ownership are not implemented.
+- **`priv_service`**: the broker's own Shizuku-style server (`PrivServerMain`), launched with
+  `setsid app_process` as **uid 2000, not root**. It hands its Binder (AIDL `IBrokerPrivService`) to the broker
+  through the `.priv` ContentProvider, the same handoff Shizuku uses. Only the broker uid may call it.
+  The ShellDenylist is enforced on both sides. It keeps running if Shizuku stops, and it exits when the broker APK is
+  updated. After every reboot it needs one bootstrap, either `priv_service op=start` (through Shizuku) or
+  `adb shell sh /sdcard/Android/data/com.rjkyker.shizukuai.broker/files/priv_start.sh`.
+- **Client delegation** (`BrokerDelegationService`, AIDL `IBrokerDelegation`, action
+  `com.rjkyker.shizukuai.broker.DELEGATION`): Dhizuku-style sharing of a narrow, API-level slice of the owner rights
+  (probe, app_info, restrictions, hide, suspend, permission, restriction). Clients are pinned by signing cert and
+  must be approved on-device. MCP `client_delegation` can only list, deny, or revoke.

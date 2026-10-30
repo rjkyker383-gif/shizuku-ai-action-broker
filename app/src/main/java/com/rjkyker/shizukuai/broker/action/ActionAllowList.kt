@@ -79,6 +79,10 @@ object ActionAllowList {
         "zebra_scanner_control" to RiskLevel.MEDIUM,
         // 1.8.0 AI discovery manifest, read-only
         "discovery_info" to RiskLevel.LOW,
+        // 1.8.8 OwnDroid parity + privileged server + delegation; per-op tiers in OwnerPolicyCatalog
+        "owner_policy" to RiskLevel.MEDIUM,
+        "priv_service" to RiskLevel.MEDIUM,
+        "client_delegation" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,
