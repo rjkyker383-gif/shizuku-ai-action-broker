@@ -90,6 +90,34 @@
             </intent-filter>
         </activity>
 
+        <!-- 1.9.0 on-device LLM host: isolated process, bound only by the broker itself. -->
+        <service
+            android:name=".llm.LocalLlmService"
+            android:exported="false"
+            android:process=":llm"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device language model inference and verified model download for the owner's writing assistant" />
+        </service>
+
+        <!-- 1.9.0 UI: writing assistant, per-message send approval (FLAG_SECURE), Mod Console. Not exported. -->
+        <activity
+            android:name=".ui.WritingAssistantActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ui.SendConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTop" />
+        <activity
+            android:name=".ui.mod.ModConsoleActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.ShizukuAiBroker" />
+
         <!-- Receives command results returned by Termux RUN_COMMAND PendingIntents. -->
         <receiver
             android:name=".shell.TermuxShellResultReceiver"

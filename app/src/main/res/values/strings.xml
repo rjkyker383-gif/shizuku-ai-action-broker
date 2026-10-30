@@ -92,4 +92,15 @@
     <string name="priv_stop">Stop privileged server</string>
     <string name="delegation_manage">Delegated client apps…</string>
     <string name="owner_idle">Policies run through the Dhizuku device owner. LOCKOUT ops are dashboard-only and ask for confirmation. Wipe / reset password / remove owner are not implemented.</string>
+    <string name="panel_autonomy">◉ ON-DEVICE AI · AUTONOMY · AUDIT</string>
+    <string name="auto_writing">Writing assistant (on-device)</string>
+    <string name="auto_refresh">Refresh autonomy status</string>
+    <string name="auto_toggle">Autonomy on/off</string>
+    <string name="auto_stop_all">STOP ALL autonomy</string>
+    <string name="auto_audit">Audit log</string>
+    <string name="auto_memory">Memory (view / accept / delete / export)</string>
+    <string name="auto_send_gate">Message send gate (kill switch + allowlists)</string>
+    <string name="auto_watchdog">Run watchdog now</string>
+    <string name="auto_idle">Local model, queue, audit and send gate status appear here.</string>
+    <string name="mod_console">⚡ Mod Console (Dhizuku + owner ops HUD)</string>
 </resources>
