@@ -136,7 +136,9 @@ class BrokerService : Service() {
             val cr = applicationContext.contentResolver
             val component = "${packageName}/.accessibility.AgentAccessibilityService"
             val cur = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-            if (cur.split(':').any { it.equals(component, ignoreCase = true) }) {
+            val mine = android.content.ComponentName(packageName, AgentAccessibilityService::class.java.name)
+            // match both "pkg/.accessibility.X" and "pkg/pkg.accessibility.X" (1.9.2: no more duplicate entries)
+            if (cur.split(':').any { android.content.ComponentName.unflattenFromString(it.trim()) == mine }) {
                 // Listed but service not bound yet — just ensure master switch is on
                 Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
                 return
