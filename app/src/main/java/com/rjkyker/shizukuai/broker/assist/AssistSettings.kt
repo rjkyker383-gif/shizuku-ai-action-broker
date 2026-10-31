@@ -18,7 +18,7 @@ object AssistSettings {
 
     fun enabled(ctx: Context) = p(ctx).getBoolean("enabled", true)
     fun autoSuggest(ctx: Context) = p(ctx).getBoolean("auto_suggest", true)
-    fun floatingButton(ctx: Context) = p(ctx).getBoolean("floating_button", false)
+    fun floatingButton(ctx: Context) = p(ctx).getBoolean("floating_button", true)
     fun remoteEnabled(ctx: Context) = p(ctx).getBoolean("remote_enabled", false)
     fun remoteUrls(ctx: Context): List<String> =
         (p(ctx).getString("remote_urls", DEFAULT_URL) ?: DEFAULT_URL).split(',', ' ', '\n').map { it.trim() }.filter { it.startsWith("http") }
@@ -36,6 +36,8 @@ object AssistSettings {
     fun setToken(ctx: Context, token: String?) {
         SecurePrefs.get(ctx).edit().apply { if (token.isNullOrBlank()) remove(TOKEN_KEY) else putString(TOKEN_KEY, token.trim()) }.apply()
     }
+    fun bubblePos(ctx: Context): Pair<Int, Int>? = p(ctx).let { if (it.contains("bubble_x")) it.getInt("bubble_x", 0) to it.getInt("bubble_y", 0) else null }
+    fun setBubblePos(ctx: Context, x: Int, y: Int) { p(ctx).edit().putInt("bubble_x", x).putInt("bubble_y", y).apply() }
     fun setExcluded(ctx: Context, s: Set<String>) { p(ctx).edit().putStringSet("excluded", s.toSet()).apply() }
 
     fun toJson(ctx: Context): JSONObject = JSONObject().put("enabled", enabled(ctx)).put("auto_suggest", autoSuggest(ctx))

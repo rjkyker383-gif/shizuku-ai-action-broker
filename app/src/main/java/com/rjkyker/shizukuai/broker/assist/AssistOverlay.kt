@@ -72,21 +72,60 @@ class AssistOverlay(private val svc: AccessibilityService) {
     fun hideChip() { chip?.let { runCatching { wm.removeView(it) } }; chip = null }
     val chipShown get() = chip != null
 
+    /** Persistent draggable neon bubble (TYPE_ACCESSIBILITY_OVERLAY: needs no overlay permission). */
     fun showBubble(onTap: () -> Unit) {
-        if (bubble != null) return
-        val b = label("✦", ModFx.CYAN, 20f, true).apply {
+        bubble?.let { it.visibility = View.VISIBLE; return }
+        val b = label("\u2726", ModFx.CYAN, 20f, true).apply {
             gravity = Gravity.CENTER; background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL; setColor(0xE005070D.toInt()); setStroke((2 * dp).toInt(), ModFx.CYAN)
             }
-            contentDescription = "Assist: suggest a completion"
-            setOnClickListener { onTap() }
+            contentDescription = "Assist: suggest a completion for the focused field"
+            elevation = 6 * dp
         }
-        val size = (44 * dp).toInt()
+        val size = (46 * dp).toInt()
+        val dm = svc.resources.displayMetrics
+        val saved = AssistSettings.bubblePos(svc)
         val p = WindowManager.LayoutParams(size, size, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT).apply {
-            gravity = Gravity.TOP or Gravity.END; x = (6 * dp).toInt(); y = (svc.resources.displayMetrics.heightPixels * 0.30f).toInt()
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = saved?.first ?: (dm.widthPixels - size - (6 * dp).toInt())
+            y = saved?.second ?: (dm.heightPixels * 0.30f).toInt()
+        }
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
+        b.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = p.x; startY = p.y; moved = false; true }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downX; val dy = e.rawY - downY
+                    if (!moved && dx * dx + dy * dy > (8 * dp) * (8 * dp)) moved = true
+                    if (moved) {
+                        p.x = (startX + dx).toInt().coerceIn(0, dm.widthPixels - size)
+                        p.y = (startY + dy).toInt().coerceIn(0, dm.heightPixels - size)
+                        runCatching { wm.updateViewLayout(v, p) }
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (moved) AssistSettings.setBubblePos(svc, p.x, p.y) else { v.performClick(); onTap() }
+                    true
+                }
+                else -> false
+            }
         }
         runCatching { wm.addView(b, p); bubble = b }
+    }
+
+    /** Hide (not remove) the bubble, e.g. while a password/OTP/card field is focused. */
+    fun suspendBubble(hidden: Boolean) { bubble?.visibility = if (hidden) View.GONE else View.VISIBLE }
+    val bubbleShown get() = bubble?.visibility == View.VISIBLE
+
+    /** Short status chip (e.g. "no text field focused"); auto-hides. */
+    fun flash(anchorY: Int, msg: String) {
+        hideChip()
+        val t = label(msg, ModFx.DIM, 13f).apply { background = frame(ModFx.DIM); setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()) }
+        val p = params().apply { x = (12 * dp).toInt(); y = anchorY }
+        runCatching { wm.addView(t, p); chip = t; t.postDelayed({ if (chip === t) hideChip() }, 2200) }
     }
 
     fun hideBubble() { bubble?.let { runCatching { wm.removeView(it) } }; bubble = null }

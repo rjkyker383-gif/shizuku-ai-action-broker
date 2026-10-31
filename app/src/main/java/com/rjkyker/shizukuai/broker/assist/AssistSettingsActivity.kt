@@ -30,14 +30,14 @@ class AssistSettingsActivity : AppCompatActivity() {
         fun txt(t: String, c: Int = ModFx.TEXT, sp: Float = 14f) = TextView(this).apply { text = t; setTextColor(c); textSize = sp; setPadding(0, pad / 3, 0, pad / 3) }
         fun sw(label: String, key: String, get: () -> Boolean) = SwitchCompat(this).apply {
             text = label; setTextColor(ModFx.TEXT); isChecked = get()
-            setOnCheckedChangeListener { _, v -> AssistSettings.setBool(this@AssistSettingsActivity, key, v); refresh() }
+            setOnCheckedChangeListener { _, v -> AssistSettings.setBool(this@AssistSettingsActivity, key, v); AssistController.refreshBubbleAsync(); refresh() }
         }
         col.addView(txt("FINISH MY SENTENCES", ModFx.CYAN, 18f))
         col.addView(txt("Suggests the next words in any app's focused text box. Tap the chip to insert at the cursor. " +
             "It never presses Enter/Send, and never reads or types into password, PIN, OTP or card fields.", ModFx.DIM, 13f))
         col.addView(sw("Assist enabled (all apps)", "enabled") { AssistSettings.enabled(this) })
         col.addView(sw("Auto-suggest while typing", "auto_suggest") { AssistSettings.autoSuggest(this) })
-        col.addView(sw("Floating ✦ Assist button", "floating_button") { AssistSettings.floatingButton(this) })
+        col.addView(sw("Persistent ✦ Assist bubble (all apps, draggable)", "floating_button") { AssistSettings.floatingButton(this) })
         col.addView(sw("Remote AI via box (sends field text off-phone; REMOTE badge)", "remote_enabled") { AssistSettings.remoteEnabled(this) })
         col.addView(Button(this).apply { text = "Excluded apps…"; setOnClickListener { editExclusions() } })
         col.addView(Button(this).apply { text = "Remote URL…"; setOnClickListener { editUrls() } })

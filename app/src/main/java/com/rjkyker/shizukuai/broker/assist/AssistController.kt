@@ -28,7 +28,21 @@ object AssistController {
 
     private val trigger = Runnable { request(manual = false) }
 
-    fun attach(svc: AccessibilityService) { svcRef = svc; overlay = AssistOverlay(svc); worker.execute { Predictors.get(svc) } }
+    fun attach(svc: AccessibilityService) {
+        svcRef = svc; overlay = AssistOverlay(svc); worker.execute { Predictors.get(svc) }
+        main.post { refreshBubble() }
+    }
+
+    /** Persistent bubble: shown whenever assist + floating button are on (re-attached on every service (re)bind). */
+    fun refreshBubble() {
+        val svc = svcRef ?: return
+        val o = overlay ?: return
+        if (AssistSettings.enabled(svc) && AssistSettings.floatingButton(svc)) o.showBubble { requestNow() } else o.hideBubble()
+    }
+    fun bubbleShown(): Boolean = overlay?.bubbleShown == true
+
+    fun refreshBubbleAsync() { main.post { refreshBubble() } }
+
     fun detach() { main.removeCallbacks(trigger); overlay?.hideAll(); overlay = null; svcRef = null }
 
     fun onEvent(svc: AccessibilityService, e: AccessibilityEvent) {
@@ -37,9 +51,15 @@ object AssistController {
         when (e.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 overlay?.hideChip(); main.removeCallbacks(trigger)
-                val editable = e.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED && e.source?.isEditable == true
-                if (editable && AssistSettings.floatingButton(svc) && !AssistSettings.isExcluded(svc, pkg)) overlay?.showBubble { requestNow() }
-                else if (!editable && e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) overlay?.hideBubble()
+                refreshBubble()
+                // never show any overlay over a password / OTP / PIN / card field
+                val src = e.source
+                if (e.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED && src != null && src.isEditable) {
+                    overlay?.suspendBubble(FieldGuard.blockReason(FocusedInput.guardField(src)) != null)
+                } else if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                    val f = FocusedInput.findNode(svc)
+                    overlay?.suspendBubble(f != null && FieldGuard.blockReason(FocusedInput.guardField(f)) != null)
+                }
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 overlay?.hideChip(); seq++
@@ -55,8 +75,9 @@ object AssistController {
 
     private fun request(manual: Boolean) {
         val svc = svcRef ?: return
-        val info = FocusedInput.read(svc) ?: return
-        if (info.blockReason != null) return
+        val info = FocusedInput.read(svc)
+        if (info == null) { if (manual) overlay?.flash((svc.resources.displayMetrics.heightPixels * 0.22f).toInt(), "Assist: tap into a text field first"); return }
+        if (info.blockReason != null) { overlay?.suspendBubble(true); return }
         if (!manual && AssistSettings.isExcluded(svc, info.pkg)) return
         if (!inFlight.compareAndSet(false, true)) return
         val mySeq = seq
@@ -67,7 +88,7 @@ object AssistController {
             last = r
             if (r == null) return@execute
             Log.i(TAG, "suggest src=${r.source} ok=${r.ok} len=${r.text.length} ms=${r.latencyMs} pkg=${info.pkg} in=${before.length}")
-            if (!r.ok) return@execute
+            if (!r.ok) { if (manual) main.post { overlay?.flash(info.bounds.top.coerceAtLeast(80), "Assist: no suggestion (" + r.reasons.lastOrNull().orEmpty().take(40) + ")") }; return@execute }
             main.post {
                 if (seq != mySeq) return@post // user kept typing; stale
                 overlay?.showChip(info.bounds, r.text, r.label, r.remote, onAccept = { accept(r, before) }, onDismiss = { overlay?.hideChip() })

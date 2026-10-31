@@ -62,11 +62,12 @@ object AssistMcp {
                 a.optJSONArray("exclude_add")?.let { arr -> for (i in 0 until arr.length()) ex += arr.getString(i) }
                 a.optJSONArray("exclude_remove")?.let { arr -> for (i in 0 until arr.length()) ex -= arr.getString(i) }
                 if (a.has("exclude_add") || a.has("exclude_remove")) AssistSettings.setExcluded(ctx, ex)
+                AssistController.refreshBubbleAsync()
             }
             else -> return err("op must be status|set")
         }
         return JSONObject().put("ok", true).put("settings", AssistSettings.toJson(ctx)).put("route", CompletionRouter.statusJson(ctx))
-            .put("a11y", AgentAccessibilityService.instance != null).put("last", AssistController.last?.toJson(includeText = false))
+            .put("a11y", AgentAccessibilityService.instance != null).put("bubble_shown", AssistController.bubbleShown()).put("last", AssistController.last?.toJson(includeText = false))
     }
 
     private fun tool(name: String, desc: String, props: JSONObject, required: List<String> = emptyList()): JSONObject {

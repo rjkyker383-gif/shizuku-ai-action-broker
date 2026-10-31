@@ -28,6 +28,8 @@
     <uses-permission android:name="com.rosan.dhizuku.permission.API" />
     <!-- Talk panel: mic is used only while a Talk session is active (runtime permission) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 1.9.2: optional; the Assist bubble itself is a TYPE_ACCESSIBILITY_OVERLAY and does not need it -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
