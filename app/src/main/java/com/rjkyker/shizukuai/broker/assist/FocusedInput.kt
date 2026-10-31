@@ -34,10 +34,34 @@ object FocusedInput {
         contentDescription = n.contentDescription?.toString(),
     )
 
+    /** Last editable seen focused in an app (captured from a11y events, before a bubble/chip tap can disturb focus). */
+    @Volatile private var last: AccessibilityNodeInfo? = null
+    @Volatile var lastAt = 0L; private set
+
+    fun remember(n: AccessibilityNodeInfo, ownPkg: String) {
+        if (!n.isEditable) return
+        last = AccessibilityNodeInfo.obtain(n); lastAt = System.currentTimeMillis()
+    }
+
+    fun sig(n: AccessibilityNodeInfo): FocusMatch.Sig {
+        val r = Rect(); n.getBoundsInScreen(r)
+        return FocusMatch.Sig(n.packageName?.toString() ?: "", n.viewIdResourceName, r.left, r.top, r.right, n.windowId)
+    }
+
     fun findNode(svc: AccessibilityService): AccessibilityNodeInfo? {
-        val f = runCatching { svc.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
-            ?: runCatching { svc.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
-        return f?.takeIf { it.isEditable }
+        // 1) global input focus across all windows
+        runCatching { svc.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()?.takeIf { it.isEditable }?.let { return it }
+        // 2) each application window's root (the active window may be our own overlay after a tap)
+        runCatching {
+            for (w in svc.windows) {
+                if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                w.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }?.let { return it }
+            }
+        }
+        // 3) the last editable we saw focused, if it is still focused/editable after a refresh
+        val l = last ?: return null
+        return if (System.currentTimeMillis() - lastAt < 120_000 && runCatching { l.refresh() }.getOrDefault(false) &&
+            l.isEditable && (l.isFocused || l.isAccessibilityFocused)) l else null
     }
 
     fun read(svc: AccessibilityService): Info? {

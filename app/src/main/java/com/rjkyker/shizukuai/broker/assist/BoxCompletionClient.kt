@@ -12,11 +12,13 @@ object BoxCompletionClient {
     fun complete(ctx: Context, before: String, maxWords: Int = 8): Reply {
         val token = AssistSettings.token(ctx) ?: return Reply(false, error = "no remote token set")
         var last: Reply = Reply(false, error = "no remote url")
+        val deadline = System.currentTimeMillis() + 1500
         for (u in AssistSettings.remoteUrls(ctx)) {
+            if (System.currentTimeMillis() > deadline) break
             val t0 = System.currentTimeMillis()
             last = runCatching {
                 val c = (URL(u).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 2500; readTimeout = 8000; doOutput = true
+                    requestMethod = "POST"; connectTimeout = 600; readTimeout = 1300; doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Authorization", "Bearer $token")
                     setRequestProperty("ngrok-skip-browser-warning", "1")

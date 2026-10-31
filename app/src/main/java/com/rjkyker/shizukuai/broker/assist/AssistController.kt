@@ -28,6 +28,21 @@ object AssistController {
 
     private val trigger = Runnable { request(manual = false) }
 
+    @Volatile private var imeCache: Pair<Long, String?> = 0L to null
+    private fun imePackage(ctx: android.content.Context): String? {
+        val now = System.currentTimeMillis()
+        if (now - imeCache.first < 30_000) return imeCache.second
+        val id = runCatching { android.provider.Settings.Secure.getString(ctx.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD) }.getOrNull()
+        val p = id?.substringBefore('/')
+        imeCache = now to p
+        return p
+    }
+
+    private fun status(svc: AccessibilityService, msg: String) {
+        Log.i(TAG, "status: $msg")
+        main.post { overlay?.flash((svc.resources.displayMetrics.heightPixels * 0.22f).toInt(), msg) }
+    }
+
     fun attach(svc: AccessibilityService) {
         svcRef = svc; overlay = AssistOverlay(svc); worker.execute { Predictors.get(svc) }
         main.post { refreshBubble() }
@@ -51,12 +66,15 @@ object AssistController {
     fun onEvent(svc: AccessibilityService, e: AccessibilityEvent) {
         if (!AssistSettings.enabled(svc)) { overlay?.hideAll(); return }
         val pkg = e.packageName?.toString()
+        val src = runCatching { e.source }.getOrNull()
+        val editable = src?.isEditable == true
+        if (FocusMatch.ignoreEvent(pkg, svc.packageName, imePackage(svc), editable, e.className?.toString())) return
+        if (editable && src != null && e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) FocusedInput.remember(src, svc.packageName)
         when (e.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 overlay?.hideChip(); main.removeCallbacks(trigger)
                 refreshBubble()
                 // never show any overlay over a password / OTP / PIN / card field
-                val src = e.source
                 if (e.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED && src != null && src.isEditable) {
                     overlay?.suspendBubble(FieldGuard.blockReason(FocusedInput.guardField(src)) != null)
                 } else if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -83,21 +101,23 @@ object AssistController {
     private fun request(manual: Boolean) {
         val svc = svcRef ?: return
         val info = FocusedInput.read(svc)
-        if (info == null) { if (manual) overlay?.flash((svc.resources.displayMetrics.heightPixels * 0.22f).toInt(), "Assist: tap into a text field first"); return }
-        if (info.blockReason != null) { overlay?.suspendBubble(true); return }
+        if (info == null) { Log.i(TAG, "request: no focused editable (manual=$manual)"); if (manual) status(svc, "Assist: tap into a text field first"); return }
+        if (info.blockReason != null) { overlay?.suspendBubble(true); if (manual) status(svc, "Assist: off for password/OTP/card fields"); return }
         if (!manual && AssistSettings.isExcluded(svc, info.pkg)) return
-        if (!inFlight.compareAndSet(false, true)) return
+        if (!inFlight.compareAndSet(false, true)) { if (manual) status(svc, "Assist: still thinking…"); return }
+        if (manual) main.post { overlay?.flash((svc.resources.displayMetrics.heightPixels * 0.22f).toInt(), "Assist: thinking…") }
         val mySeq = seq
         val before = info.before
         worker.execute {
             val r = runCatching { CompletionRouter.complete(svc, before) }.getOrNull()
             inFlight.set(false)
+            if (r == null && manual) status(svc, "Assist: completion error")
             last = r
             if (r == null) return@execute
             Log.i(TAG, "suggest src=${r.source} ok=${r.ok} len=${r.text.length} ms=${r.latencyMs} pkg=${info.pkg} in=${before.length}")
             if (!r.ok) { if (manual) main.post { overlay?.flash(info.bounds.top.coerceAtLeast(80), "Assist: no suggestion (" + r.reasons.lastOrNull().orEmpty().take(40) + ")") }; return@execute }
             main.post {
-                if (seq != mySeq) return@post // user kept typing; stale
+                if (seq != mySeq && !manual) return@post // user kept typing; stale
                 overlay?.showChip(info.bounds, r.text, r.label, r.remote, onAccept = { accept(r, before) }, onDismiss = { overlay?.hideChip() })
             }
         }
