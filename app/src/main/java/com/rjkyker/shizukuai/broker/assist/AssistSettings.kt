@@ -36,6 +36,12 @@ object AssistSettings {
     fun setToken(ctx: Context, token: String?) {
         SecurePrefs.get(ctx).edit().apply { if (token.isNullOrBlank()) remove(TOKEN_KEY) else putString(TOKEN_KEY, token.trim()) }.apply()
     }
+    /** "typewriter" (default; shell input text, humanlike rhythm) or "direct" (ACTION_SET_TEXT). */
+    fun insertMode(ctx: Context): String = p(ctx).getString("insert_mode", "typewriter") ?: "typewriter"
+    fun setInsertMode(ctx: Context, m: String) { p(ctx).edit().putString("insert_mode", if (m == "direct") "direct" else "typewriter").apply() }
+    /** 0.25..3.0, 1.0 = normal */
+    fun typeSpeed(ctx: Context): Double = p(ctx).getFloat("type_speed", 1.0f).toDouble().coerceIn(0.25, 3.0)
+    fun setTypeSpeed(ctx: Context, v: Double) { p(ctx).edit().putFloat("type_speed", v.coerceIn(0.25, 3.0).toFloat()).apply() }
     fun bubblePos(ctx: Context): Pair<Int, Int>? = p(ctx).let { if (it.contains("bubble_x")) it.getInt("bubble_x", 0) to it.getInt("bubble_y", 0) else null }
     fun setBubblePos(ctx: Context, x: Int, y: Int) { p(ctx).edit().putInt("bubble_x", x).putInt("bubble_y", y).apply() }
     fun setExcluded(ctx: Context, s: Set<String>) { p(ctx).edit().putStringSet("excluded", s.toSet()).apply() }
@@ -43,5 +49,5 @@ object AssistSettings {
     fun toJson(ctx: Context): JSONObject = JSONObject().put("enabled", enabled(ctx)).put("auto_suggest", autoSuggest(ctx))
         .put("floating_button", floatingButton(ctx)).put("remote_enabled", remoteEnabled(ctx))
         .put("remote_urls", JSONArray(remoteUrls(ctx))).put("remote_token_set", hasToken(ctx))
-        .put("excluded", JSONArray(excluded(ctx).sorted()))
+        .put("excluded", JSONArray(excluded(ctx).sorted())).put("insert_mode", insertMode(ctx)).put("type_speed", typeSpeed(ctx))
 }

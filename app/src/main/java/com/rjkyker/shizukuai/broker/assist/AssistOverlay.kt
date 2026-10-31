@@ -116,6 +116,16 @@ class AssistOverlay(private val svc: AccessibilityService) {
         runCatching { wm.addView(b, p); bubble = b }
     }
 
+    /** "typing…" indicator: amber ■ (tap = stop) while the typewriter runs. */
+    fun setTyping(on: Boolean) {
+        val b = bubble as? TextView ?: return
+        b.text = if (on) "\u25A0" else "\u2726"
+        b.setTextColor(if (on) ModFx.AMBER else ModFx.CYAN)
+        (b.background as? GradientDrawable)?.setStroke((2 * dp).toInt(), if (on) ModFx.AMBER else ModFx.CYAN)
+        b.contentDescription = if (on) "typing… tap to stop" else "Assist: suggest a completion for the focused field"
+        if (on) b.visibility = View.VISIBLE
+    }
+
     /** Hide (not remove) the bubble, e.g. while a password/OTP/card field is focused. */
     fun suspendBubble(hidden: Boolean) { bubble?.visibility = if (hidden) View.GONE else View.VISIBLE }
     val bubbleShown get() = bubble?.visibility == View.VISIBLE

@@ -88,3 +88,24 @@ It refuses blocked fields, supports `--only-package` and never submits.
 | `input_assist_config` | MEDIUM | `op=status\|set`. Remote settings need `confirm=true`. The token is never returned. |
 
 None of these are autonomous-actor tools (they are in `NEVER_AUTONOMOUS`).
+
+## 1.9.3: Typewriter insert (default)
+- **Default insert mode is typewriter.** Tapping a chip types the suggestion out with shell `input text` as uid 2000,
+  the same as `adb shell input text`.
+  - It goes through the broker's own priv server, with Shizuku as the fallback, so no box or adb is needed.
+  - It types in 1–3 character chunks, with 35–90 ms gaps plus jitter and a pause after punctuation. The speed slider
+    in Assist settings goes from 0.25× to 3×.
+  - Set-text mode is still available: in settings, or `input_assist_config insert_mode=direct`.
+- **Narrow command gate:** `TypeCommand` only lets `input text <escaped printable ASCII>` through.
+  - Spaces become `%s`.
+  - `()<>|;&*\'"`$~!#?[]{}^=` are backslash-escaped.
+  - Never keyevent, tap or swipe, so there is no ENTER and no IME action.
+  - Newlines and tabs become spaces.
+  - Emoji and non-ASCII chunks are inserted with accessibility set-text at the cursor, or skipped and logged.
+- **Checked before every chunk:** the same package, the same focused node, the screen is on, and the field is not
+  password/OTP/card. If any of those fails, typing aborts and "typing stopped: <reason>" is shown.
+- **Bubble while typing:** it turns into an amber ■ ("typing…"). Tap it to stop.
+- **Audit:** records the package, length, typed and pasted counts, duration and method. Never the text.
+- **MCP:** `input_focused_insert mode=type confirm=true`.
+- **tc22-type modes:** `--mode type` (default; the phone types), `--mode direct`, and `--mode adb` (box-side
+  `adb shell input text` per chunk, re-reading the focused field before each chunk).

@@ -39,6 +39,22 @@ class AssistSettingsActivity : AppCompatActivity() {
         col.addView(sw("Auto-suggest while typing", "auto_suggest") { AssistSettings.autoSuggest(this) })
         col.addView(sw("Persistent ✦ Assist bubble (all apps, draggable)", "floating_button") { AssistSettings.floatingButton(this) })
         col.addView(sw("Remote AI via box (sends field text off-phone; REMOTE badge)", "remote_enabled") { AssistSettings.remoteEnabled(this) })
+        col.addView(sw("Typewriter insert (types it out like you, via shell input text)", "typewriter") { AssistSettings.insertMode(this) == "typewriter" }.apply {
+            setOnCheckedChangeListener { _, v -> AssistSettings.setInsertMode(this@AssistSettingsActivity, if (v) "typewriter" else "direct"); refresh() }
+        })
+        val speedLabel = txt("Typing speed: %.2fx".format(AssistSettings.typeSpeed(this)), ModFx.DIM, 13f)
+        col.addView(speedLabel)
+        col.addView(android.widget.SeekBar(this).apply {
+            max = 275; progress = ((AssistSettings.typeSpeed(this@AssistSettingsActivity) - 0.25) * 100).toInt()
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                    val v = 0.25 + p / 100.0; speedLabel.text = "Typing speed: %.2fx".format(v)
+                    if (fromUser) AssistSettings.setTypeSpeed(this@AssistSettingsActivity, v)
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+            })
+        })
         col.addView(Button(this).apply { text = "Excluded apps…"; setOnClickListener { editExclusions() } })
         col.addView(Button(this).apply { text = "Remote URL…"; setOnClickListener { editUrls() } })
         col.addView(txt("TRY IT (harmless test box — nothing is sent anywhere)", ModFx.GREEN, 13f))

@@ -39,6 +39,9 @@ object AssistController {
         val o = overlay ?: return
         if (AssistSettings.enabled(svc) && AssistSettings.floatingButton(svc)) o.showBubble { requestNow() } else o.hideBubble()
     }
+    /** MCP path: runs on the caller's thread (not main). */
+    fun typewriteBlocking(svc: AccessibilityService, text: String): Typewriter.Outcome = typewrite(svc, text)
+
     fun bubbleShown(): Boolean = overlay?.bubbleShown == true
 
     fun refreshBubbleAsync() { main.post { refreshBubble() } }
@@ -62,6 +65,7 @@ object AssistController {
                 }
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                if (Typewriter.isRunning()) return // our own typing; no suggestions mid-type
                 overlay?.hideChip(); seq++
                 main.removeCallbacks(trigger)
                 if (System.currentTimeMillis() < quietUntil) return
@@ -71,7 +75,10 @@ object AssistController {
     }
 
     /** Manual Assist (tile / bubble / MCP show_chip): suggest now even if auto-suggest is off. */
-    fun requestNow(delayMs: Long = 0) { main.removeCallbacks(trigger); main.postDelayed({ request(manual = true) }, delayMs) }
+    fun requestNow(delayMs: Long = 0) {
+        if (Typewriter.isRunning()) { Typewriter.stop(); return } // bubble tap while typing = stop
+        main.removeCallbacks(trigger); main.postDelayed({ request(manual = true) }, delayMs)
+    }
 
     private fun request(manual: Boolean) {
         val svc = svcRef ?: return
@@ -100,11 +107,27 @@ object AssistController {
         val svc = svcRef ?: return
         overlay?.hideChip()
         quietUntil = System.currentTimeMillis() + SELF_INSERT_QUIET_MS
+        if (AssistSettings.insertMode(svc) == "typewriter") {
+            worker.execute {
+                val o = typewrite(svc, r.text)
+                quietUntil = System.currentTimeMillis() + SELF_INSERT_QUIET_MS
+                if (o.ok) Predictors.learnAccepted(svc, before, r.text)
+            }
+            return
+        }
         val res = FocusedInput.insert(svc, r.text, "append")
         AuditLog.record(svc, "USER_DEVICE", "input_focused_insert", "HIGH", if (res.optBoolean("ok")) "ALLOW" else "ERROR",
             "chip tap (never submits)", null,
             outcome = "pkg=${res.optString("package")} len=${r.text.length} src=${r.source} via=${res.optString("via", res.optString("error"))}")
         if (res.optBoolean("ok")) worker.execute { Predictors.learnAccepted(svc, before, r.text) }
+    }
+
+    /** Typewriter with the bubble showing "typing…" (tap = stop). Blocking: worker thread only. */
+    fun typewrite(svc: AccessibilityService, text: String): Typewriter.Outcome {
+        val o = Typewriter.type(svc, text, AssistSettings.typeSpeed(svc)) { on -> main.post { overlay?.setTyping(on) } }
+        if (!o.ok && o.stopped != "already typing")
+            main.post { overlay?.flash((svc.resources.displayMetrics.heightPixels * 0.22f).toInt(), "typing stopped: ${o.stopped}") }
+        return o
     }
 
     /** Show a given suggestion as a chip (MCP input_suggest show_chip=true). */

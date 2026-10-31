@@ -35,8 +35,12 @@ object AssistMcp {
                 if (info.blockReason != null) return err("refused: ${info.blockReason}").put("package", info.pkg)
                 if (AssistSettings.isExcluded(ctx, info.pkg)) return err("refused: ${info.pkg} is on the assist exclusion list").put("package", info.pkg)
                 val text = args.optString("text", "")
-                val mode = args.optString("mode", "append").let { if (it == "replace") "replace" else "append" }
-                FocusedInput.insert(svc, text, mode).put("submitted", false).put("note", "inserted only; the owner presses send")
+                val mode = args.optString("mode", "append").let { if (it == "replace" || it == "type") it else "append" }
+                if (mode == "type") {
+                    if (text.isEmpty() || text.length > 2000) return err("text must be 1-2000 chars")
+                    AssistController.typewriteBlocking(svc, text).toJson().put("package", info.pkg).put("mode", "type")
+                        .put("note", "typed only; the owner presses send")
+                } else FocusedInput.insert(svc, text, mode).put("submitted", false).put("note", "inserted only; the owner presses send")
             }
             SUGGEST -> {
                 if (info.blockReason != null) return err("refused: ${info.blockReason}").put("package", info.pkg)
@@ -55,6 +59,8 @@ object AssistMcp {
             "set" -> {
                 val touchesRemote = a.has("remote_enabled") || a.has("remote_urls") || a.has("remote_token")
                 if (touchesRemote && !confirmed) return err("remote settings need confirm=true (field text would leave the phone)")
+                if (a.has("insert_mode")) AssistSettings.setInsertMode(ctx, a.getString("insert_mode"))
+                if (a.has("type_speed")) AssistSettings.setTypeSpeed(ctx, a.getDouble("type_speed"))
                 listOf("enabled", "auto_suggest", "floating_button", "remote_enabled").forEach { k -> if (a.has(k)) AssistSettings.setBool(ctx, k, a.getBoolean(k)) }
                 if (a.has("remote_urls")) AssistSettings.setUrls(ctx, a.getString("remote_urls"))
                 if (a.has("remote_token")) AssistSettings.setToken(ctx, a.getString("remote_token"))
@@ -81,13 +87,14 @@ object AssistMcp {
     fun definitions(): List<JSONObject> = listOf(
         tool(READ, "Focused text field in the front app: package, field hint, length, cursor, blocked (password/OTP/card). Text only with confirm=true and never for blocked fields.",
             JSONObject().put("confirm", p("boolean"))),
-        tool(INSERT, "Insert text at the cursor of the focused field (mode=append) or replace it (mode=replace). HIGH: confirm=true. Refuses password/OTP/PIN/card fields and excluded apps. Never presses Enter/Send.",
-            JSONObject().put("text", p("string", "max 2000 chars")).put("mode", e("append", "replace")).put("confirm", p("boolean")), listOf("text")),
+        tool(INSERT, "Insert text at the cursor of the focused field (mode=append) or replace it (mode=replace), or type it out humanlike via shell `input text` (mode=type; re-checks focus before every chunk). HIGH: confirm=true. Refuses password/OTP/PIN/card fields and excluded apps. Never presses Enter/Send.",
+            JSONObject().put("text", p("string", "max 2000 chars")).put("mode", e("append", "replace", "type")).put("confirm", p("boolean")), listOf("text")),
         tool(SUGGEST, "Suggest the next words for the focused field. Router: on-device LLM → box server (opt-in, remote) → offline word predictor (not AI). Returns suggestion, source, latency. Inserts nothing; show_chip=true shows the on-phone chip.",
             JSONObject().put("source", e("auto", "local_llm", "box", "predictor")).put("show_chip", p("boolean"))),
         tool(CONFIG, "Type-anywhere settings. op=status|set. Remote settings (remote_enabled, remote_urls, remote_token) need confirm=true. Token is stored encrypted and never returned.",
             JSONObject().put("op", e("status", "set")).put("enabled", p("boolean")).put("auto_suggest", p("boolean"))
-                .put("floating_button", p("boolean")).put("remote_enabled", p("boolean")).put("remote_urls", p("string", "comma-separated"))
+                .put("floating_button", p("boolean")).put("remote_enabled", p("boolean"))
+                .put("insert_mode", e("typewriter", "direct")).put("type_speed", p("number", "0.25-3.0, 1 = normal")).put("remote_urls", p("string", "comma-separated"))
                 .put("remote_token", p("string")).put("exclude_add", JSONObject().put("type", "array").put("items", p("string")))
                 .put("exclude_remove", JSONObject().put("type", "array").put("items", p("string"))).put("confirm", p("boolean")), listOf("op")),
     )
