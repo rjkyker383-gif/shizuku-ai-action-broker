@@ -53,6 +53,7 @@ class ModConsoleActivity : Activity() {
     private lateinit var temp: RadialGaugeView
     private lateinit var term: TerminalLogView
     private lateinit var pauseBanner: TextView
+    private lateinit var thermalNote: TextView
     private val executor by lazy { McpToolExecutor(applicationContext, ActionRouter(applicationContext)) }
     private var visible = false
     private val d by lazy { resources.displayMetrics.density }
@@ -92,6 +93,8 @@ class ModConsoleActivity : Activity() {
         ram = RadialGaugeView(this, "RAM"); disk = RadialGaugeView(this, "STORAGE"); temp = RadialGaugeView(this, "TEMP")
         listOf(ram, disk, temp).forEach { gauges.addView(it, LinearLayout.LayoutParams(0, -2, 1f)) }
         col.addView(panel(gauges))
+        thermalNote = label("thermal: reading…", 10f, ModFx.DIM)
+        col.addView(thermalNote)
 
         col.addView(section("LIVE LOG"))
         term = TerminalLogView(this)
@@ -140,15 +143,18 @@ class ModConsoleActivity : Activity() {
         val mi = ActivityManager.MemoryInfo().also { getSystemService(ActivityManager::class.java).getMemoryInfo(it) }
         val st = runCatching { StatFs(filesDir.path) }.getOrNull()
         val total = st?.totalBytes ?: 1L; val free = st?.availableBytes ?: 0L
-        val bat = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val tC = (bat?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
-        val thermal = runCatching { getSystemService(PowerManager::class.java).currentThermalStatus }.getOrDefault(0)
+        val th = com.rjkyker.shizukuai.broker.thermal.ThermalReader.statusJson(applicationContext)
+        val tC = th.optDouble("hottest_c", 0.0).toFloat()
+        val stopC = th.optJSONObject("config")?.optDouble("cpu_stop_c", 80.0)?.toFloat() ?: 80f
         runOnUiThread {
             if (!visible) return@runOnUiThread
             chain.setStates(chainStates)
             ram.set(1f - mi.availMem.toFloat() / mi.totalMem, "${mi.availMem / (1 shl 20)}M")
             disk.set(1f - free.toFloat() / total, "${free / (1 shl 20)}M")
-            temp.set(maxOf(tC / 50f, thermal / 4f), "${"%.0f".format(tC)}°")
+            temp.set(tC / stopC, "${"%.0f".format(tC)}°")
+            thermalNote.text = "thermal ${th.optString("level")} · ${th.optString("reason")} · hottest ${th.optString("hottest_zone")} · " +
+                "Android status ${th.optInt("android_status_advisory")} (advisory only)"
+            thermalNote.setTextColor(when (th.optString("level")) { "STOP" -> ModFx.RED; "THROTTLE" -> ModFx.AMBER; else -> ModFx.DIM })
         }
     }
 

@@ -34,10 +34,11 @@ object AutonomyScheduler {
     fun snapshot(ctx: Context): Conditions.Snapshot {
         val pm = ctx.getSystemService(PowerManager::class.java)
         val (pct, charging) = Preflight.battery(ctx)
+        val tv = com.rjkyker.shizukuai.broker.thermal.ThermalReader.verdict(ctx)
         return Conditions.Snapshot(
             autonomyEnabled = AutonomyFlags.get(ctx, AutonomyFlags.AUTONOMY),
             paused = BrokerPause.isPaused(ctx),
-            thermalStatus = runCatching { pm.currentThermalStatus }.getOrDefault(0),
+            thermalLevel = tv.level.ordinal, thermalReason = tv.reason,
             batteryPct = pct, charging = charging, powerSave = pm.isPowerSaveMode,
         )
     }

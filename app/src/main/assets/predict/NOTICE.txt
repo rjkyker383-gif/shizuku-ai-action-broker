@@ -1,0 +1,6 @@
+en_model.tsv.gz: the offline word predictor for type-anywhere assist ("word prediction, not AI").
+- Unigram frequencies: FrequencyWords en_50k (OpenSubtitles 2018) by Hermit Dave,
+  https://github.com/hermitdave/FrequencyWords, content licensed CC-BY-SA-4.0.
+- Bigram/trigram counts: Project Gutenberg public-domain texts (ebooks 11, 36, 46, 84, 98, 120, 158, 161, 174, 345,
+  768, 1260, 1342, 1661, 1952, 2701, 4300) plus a short phrase list written for this project (tools/predictor/phrases.txt).
+- The derived table is distributed under CC-BY-SA-4.0. Build script: tools/predictor/build_model.py.

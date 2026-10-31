@@ -25,21 +25,23 @@ object Watchdog {
 
     fun probe(ctx: Context): JSONObject {
         val (pct, charging) = Preflight.battery(ctx)
-        val thermal = runCatching { ctx.getSystemService(android.os.PowerManager::class.java).currentThermalStatus }.getOrDefault(-1)
+        val th = com.rjkyker.shizukuai.broker.thermal.ThermalReader.statusJson(ctx)
         return JSONObject()
             .put("server_running", BrokerServer.get() != null)
             .put("accessibility", AgentAccessibilityService.instance != null)
             .put("shizuku_ready", runCatching { ShizukuGateway.isReady() }.getOrDefault(false))
             .put("priv_alive", runCatching { PrivServiceClient.isAlive() }.getOrDefault(false))
             .put("paused", BrokerPause.isPaused(ctx))
-            .put("battery_pct", pct).put("charging", charging).put("thermal_status", thermal)
+            .put("battery_pct", pct).put("charging", charging)
+            .put("thermal_level", th.optString("level")).put("hottest_c", th.opt("hottest_c"))
+            .put("android_thermal_advisory", th.optInt("android_status_advisory")).put("thermal", th)
             .put("free_storage_mb", Preflight.freeStorageBytes(ctx) / (1024 * 1024))
     }
 
     fun summary(p: JSONObject): String =
         "server=${p.optBoolean("server_running")} a11y=${p.optBoolean("accessibility")} shizuku=${p.optBoolean("shizuku_ready")} " +
             "priv=${p.optBoolean("priv_alive")} paused=${p.optBoolean("paused")} battery=${p.optInt("battery_pct")}%" +
-            (if (p.optBoolean("charging")) " charging" else "") + " thermal=${p.optInt("thermal_status")} free=${p.optLong("free_storage_mb")}MB"
+            (if (p.optBoolean("charging")) " charging" else "") + " thermal=${p.optString("thermal_level")}@${p.opt("hottest_c")}°C (android ${p.optInt("android_thermal_advisory")} advisory) free=${p.optLong("free_storage_mb")}MB"
 
     fun run(ctx: Context): JSONObject {
         val p = probe(ctx)

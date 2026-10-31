@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.StatFs
 import com.rjkyker.shizukuai.broker.service.BrokerPause
+import com.rjkyker.shizukuai.broker.thermal.ThermalPolicy
+import com.rjkyker.shizukuai.broker.thermal.ThermalReader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -19,13 +21,16 @@ data class PreflightInput(
     val availRamBytes: Long,
     val lowMemThresholdBytes: Long,
     val lowMemory: Boolean,
-    /** PowerManager.THERMAL_STATUS_* (0 NONE, 1 LIGHT, 2 MODERATE, ...); -1 unknown. */
-    val thermalStatus: Int,
+    /** 1.9.1: ThermalPolicy level from REAL temperatures (0 OK, 1 THROTTLE, 2 STOP). */
+    val thermalLevel: Int,
     val paused: Boolean,
     val batteryPct: Int,
     val charging: Boolean,
     val abi64: Boolean,
     val alreadyDownloaded: Boolean,
+    val thermalReason: String = "",
+    /** PowerManager status, advisory only (the TC22 reports SEVERE at ~47 °C). */
+    val androidThermalAdvisory: Int = -1,
 )
 
 data class PreflightResult(
@@ -44,7 +49,8 @@ data class PreflightResult(
         .put("avail_ram_mb", input.availRamBytes / MB)
         .put("ram_headroom_mb", (input.availRamBytes - input.lowMemThresholdBytes) / MB)
         .put("required_ram_headroom_mb", spec.minFreeRamMb)
-        .put("thermal_status", input.thermalStatus).put("paused", input.paused)
+        .put("thermal_level", input.thermalLevel).put("thermal_reason", input.thermalReason)
+        .put("android_thermal_advisory", input.androidThermalAdvisory).put("paused", input.paused)
         .put("battery_pct", input.batteryPct).put("charging", input.charging)
         .put("downloaded", input.alreadyDownloaded)
 
@@ -52,14 +58,14 @@ data class PreflightResult(
 }
 
 object Preflight {
-    const val THERMAL_MODERATE = 2
+    const val THERMAL_STOP = 2
     const val MIN_BATTERY_PCT = 15
 
     fun evaluate(spec: ModelSpec, i: PreflightInput): PreflightResult {
         val reasons = mutableListOf<String>()
         if (!i.abi64) reasons += "arm64-v8a required"
         if (i.paused) reasons += "broker paused"
-        if (i.thermalStatus >= THERMAL_MODERATE) reasons += "thermal status ${i.thermalStatus} >= MODERATE"
+        if (i.thermalLevel >= THERMAL_STOP) reasons += "thermal STOP: ${i.thermalReason}"
         if (!i.charging && i.batteryPct in 0 until MIN_BATTERY_PCT) reasons += "battery ${i.batteryPct}% < $MIN_BATTERY_PCT% and not charging"
         val common = reasons.isEmpty()
 
@@ -86,15 +92,16 @@ object Preflight {
         val free = runCatching { StatFs(dir.path).availableBytes }.getOrDefault(0L)
         val am = ctx.getSystemService(ActivityManager::class.java)
         val mi = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
-        val thermal = if (Build.VERSION.SDK_INT >= 29)
-            runCatching { ctx.getSystemService(PowerManager::class.java).currentThermalStatus }.getOrDefault(-1) else -1
+        val tr = ThermalReader.read(ctx, allowPriv = !isLlmProcess())
+        val tv = ThermalPolicy.evaluate(tr, ThermalReader.config(ctx))
         val (pct, charging) = battery(ctx)
         return PreflightInput(
             freeStorageBytes = free, availRamBytes = mi.availMem, lowMemThresholdBytes = mi.threshold,
-            lowMemory = mi.lowMemory, thermalStatus = thermal, paused = pausedFresh(ctx),
+            lowMemory = mi.lowMemory, thermalLevel = tv.level.ordinal, paused = pausedFresh(ctx),
             batteryPct = pct, charging = charging,
             abi64 = Build.SUPPORTED_64_BIT_ABIS.contains("arm64-v8a"),
             alreadyDownloaded = ModelStore.isVerifiedPresent(ctx, spec),
+            thermalReason = tv.reason, androidThermalAdvisory = tr.androidStatus,
         )
     }
 
@@ -103,6 +110,8 @@ object Preflight {
     fun pausedFresh(ctx: Context): Boolean = runCatching {
         ctx.getSharedPreferences("broker_pause", Context.MODE_MULTI_PROCESS).getBoolean("paused", false)
     }.getOrDefault(BrokerPause.isPaused(ctx))
+
+    fun isLlmProcess(): Boolean = runCatching { android.app.Application.getProcessName().endsWith(":llm") }.getOrDefault(false)
 
     fun battery(ctx: Context): Pair<Int, Boolean> {
         val s = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

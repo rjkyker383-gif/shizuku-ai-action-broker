@@ -38,7 +38,7 @@ class TaskStateMachineTest {
     }
 
     private fun snap(auto: Boolean = true, paused: Boolean = false, thermal: Int = 0, bat: Int = 80, charging: Boolean = false, saver: Boolean = false) =
-        Conditions.Snapshot(auto, paused, thermal, bat, charging, saver)
+        Conditions.Snapshot(autonomyEnabled = auto, paused = paused, thermalLevel = thermal, batteryPct = bat, charging = charging, powerSave = saver)
 
     @Test fun schedulerGates() {
         assertTrue(Conditions.evaluate(snap(), false) is Conditions.Decision.Run)

@@ -118,6 +118,22 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.ShizukuAiBroker" />
 
+        <!-- 1.9.1 type-anywhere: settings + quick-settings Assist tile -->
+        <activity
+            android:name=".assist.AssistSettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <service
+            android:name=".assist.AssistTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_launcher"
+            android:label="Assist"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Receives command results returned by Termux RUN_COMMAND PendingIntents. -->
         <receiver
             android:name=".shell.TermuxShellResultReceiver"

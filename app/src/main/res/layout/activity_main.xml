@@ -788,6 +788,12 @@
                         android:layout_height="wrap_content"
                         android:text="@string/auto_writing" />
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/autoAssistButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Type-anywhere assist (finish my sentences)" />
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/autoRefreshButton"
                         style="@style/CC.Button"
                         android:layout_width="match_parent"

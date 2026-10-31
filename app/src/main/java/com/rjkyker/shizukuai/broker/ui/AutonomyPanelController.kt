@@ -34,6 +34,9 @@ class AutonomyPanelController(
 
     fun setup() {
         b.autoWritingButton.setOnClickListener { act.startActivity(Intent(act, WritingAssistantActivity::class.java)) }
+        b.autoAssistButton.setOnClickListener {
+            act.startActivity(Intent(act, com.rjkyker.shizukuai.broker.assist.AssistSettingsActivity::class.java))
+        }
         b.autoRefreshButton.setOnClickListener { refresh() }
         b.autoToggleButton.setOnClickListener { toggleAutonomy() }
         b.autoStopAllButton.setOnClickListener {
@@ -54,6 +57,9 @@ class AutonomyPanelController(
         sb.append("flags: ").append(AutonomyFlags.toJson(ctx)).append("\n")
         sb.append("route: ").append(ModelRouter.routeJson(ctx)).append("\n")
         sb.append("queue: ").append(q.countsJson()).append("\n")
+        val th = com.rjkyker.shizukuai.broker.thermal.ThermalReader.statusJson(ctx)
+        sb.append("thermal: ${th.optString("level")} hottest=${th.opt("hottest_c")}°C (${th.optString("hottest_zone")}) " +
+            "battery=${th.opt("battery_c")}°C · ${th.optString("reason")} · Android status ${th.optInt("android_status_advisory")} = advisory only\n")
         val runs = ModelRouter.recentRunsJson(ctx, 3)
         for (i in 0 until runs.length()) {
             val r = runs.getJSONObject(i)

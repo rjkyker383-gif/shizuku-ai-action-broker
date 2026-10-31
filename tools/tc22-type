@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""tc22-type: finish the sentence in the TC22's focused text field.
+
+  read focused field (broker MCP input_focused_read confirm=true)
+  -> completion from the box model (/complete, Qwen2.5-0.5B on llama-server; or --source phone = broker input_suggest)
+  -> insert at the cursor (input_focused_insert confirm=true). NEVER presses Enter/Send.
+
+Usage: tc22-type [--dry-run] [--source box|phone] [--text "words to insert"] [--only-package PKG] [--show]
+Tokens are read from /workspace/muse-bridge/.env and never printed. Field text is printed only with --show.
+"""
+import argparse, json, subprocess, sys, time, urllib.request
+
+ENV = "/workspace/muse-bridge/.env"
+COMPLETE_URL = "http://127.0.0.1:8776/complete"
+BROKER_URLS = [("http://127.0.0.1:17999/mcp", None), ("http://100.95.242.123:17999/mcp", "127.0.0.1:1055")]
+
+def env(key):
+    for line in open(ENV):
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip()
+    sys.exit(f"{key} missing in {ENV}")
+
+BROKER_TOKEN = env("BROKER_TOKEN")
+
+def broker(name, args, timeout=40):
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}})
+    cfg = 'header = "Authorization: Bearer %s"\n' % BROKER_TOKEN
+    last = ""
+    for url, socks in BROKER_URLS:
+        cmd = ["curl", "-s", "--max-time", str(timeout), "-K", "-", "-H", "Content-Type: application/json", "-d", body, url]
+        if socks: cmd[1:1] = ["--socks5-hostname", socks]
+        r = subprocess.run(cmd, input=cfg, capture_output=True, text=True)
+        try:
+            res = json.loads(r.stdout)["result"]
+            return json.loads("".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text"))
+        except Exception:
+            last = (r.stdout[:200] + r.stderr[:200]).replace(BROKER_TOKEN, "***")
+    sys.exit("broker MCP unreachable (adb forward 17999 and tailscale both failed): " + last)
+
+def box_complete(text):
+    tok = env("COMPLETE_TOKEN")
+    req = urllib.request.Request(COMPLETE_URL, data=json.dumps({"text": text, "max_words": 8}).encode(),
+                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + tok})
+    return json.loads(urllib.request.urlopen(req, timeout=30).read())
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--source", choices=["box", "phone"], default="box")
+    ap.add_argument("--text")
+    ap.add_argument("--only-package")
+    ap.add_argument("--show", action="store_true")
+    a = ap.parse_args()
+    t0 = time.time()
+    f = broker("input_focused_read", {"confirm": True})
+    if not f.get("ok"): sys.exit("read failed: " + str(f.get("error")))
+    pkg = f.get("package")
+    meta = {k: f.get(k) for k in ("package", "class", "view_id", "length", "sel_start", "blocked", "block_reason")}
+    print("field:", json.dumps(meta))
+    if f.get("blocked"): sys.exit("refusing: " + str(f.get("block_reason")))
+    if a.only_package and pkg != a.only_package: sys.exit(f"refusing: focused app is {pkg}, not {a.only_package}")
+    before = f.get("before", "")
+    t_read = time.time()
+    if a.text:
+        sugg, src, ms = a.text, "given", 0
+    elif a.source == "box":
+        r = box_complete(before)
+        if not r.get("ok"): sys.exit("box completion failed: " + str(r.get("error")))
+        sugg, src, ms = r["completion"], "box:" + r.get("model", ""), r.get("ms")
+    else:
+        r = broker("input_suggest", {"source": "auto"})
+        if not r.get("ok"): sys.exit("phone suggest failed: " + json.dumps(r.get("skipped")))
+        sugg, src, ms = r["suggestion"], "phone:" + r.get("source", ""), r.get("latency_ms")
+    t_sugg = time.time()
+    print("suggestion:", json.dumps({"source": src, "len": len(sugg), "model_ms": ms, **({"before": before, "text": sugg} if a.show else {})}))
+    if a.dry_run:
+        print("dry run: nothing inserted"); return
+    ins = broker("input_focused_insert", {"text": sugg, "mode": "append", "confirm": True})
+    t_ins = time.time()
+    print("insert:", json.dumps({k: ins.get(k) for k in ("ok", "via", "package", "len", "submitted", "error")}))
+    print("timing_ms:", json.dumps({"read": int((t_read - t0) * 1000), "suggest": int((t_sugg - t_read) * 1000),
+                                    "insert": int((t_ins - t_sugg) * 1000), "total": int((t_ins - t0) * 1000)}))
+    print("not sent: you press send yourself")
+    sys.exit(0 if ins.get("ok") else 2)
+
+if __name__ == "__main__":
+    main()

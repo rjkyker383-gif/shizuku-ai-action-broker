@@ -93,7 +93,18 @@ object AutonomyMcp {
                 }
                 "stop_all" -> { AutonomyFlags.stopAll(ctx); LlmClient.cancel(ctx); JSONObject().put("ok", true).put("flags", AutonomyFlags.toJson(ctx)) }
                 "run_now" -> { AutonomyScheduler.kick(ctx); JSONObject().put("ok", true).put("note", "runner kicked") }
-                else -> err("op must be status|enable|disable|stop_all|run_now")
+                "thermal" -> com.rjkyker.shizukuai.broker.thermal.ThermalReader.statusJson(ctx, force = true)
+                "thermal_set" -> {
+                    if (!confirmed) return err("thermal_set changes safety limits; resend with confirm=true (hard ceilings still apply)")
+                    val cur = com.rjkyker.shizukuai.broker.thermal.ThermalReader.config(ctx)
+                    val n = com.rjkyker.shizukuai.broker.thermal.ThermalReader.setConfig(ctx, com.rjkyker.shizukuai.broker.thermal.ThermalPolicy.Config(
+                        args.optDouble("cpu_throttle_c", cur.cpuThrottleC), args.optDouble("cpu_stop_c", cur.cpuStopC),
+                        args.optDouble("battery_throttle_c", cur.batteryThrottleC), args.optDouble("battery_stop_c", cur.batteryStopC)))
+                    com.rjkyker.shizukuai.broker.thermal.ThermalReader.statusJson(ctx, force = true).put("applied", JSONObject()
+                        .put("cpu_throttle_c", n.cpuThrottleC).put("cpu_stop_c", n.cpuStopC)
+                        .put("battery_throttle_c", n.batteryThrottleC).put("battery_stop_c", n.batteryStopC))
+                }
+                else -> err("op must be status|enable|disable|stop_all|run_now|thermal|thermal_set")
             }
             MEMORY -> when (args.optString("op", "list")) {
                 "list" -> MemoryStore.exportJson(ctx)
@@ -128,8 +139,11 @@ object AutonomyMcp {
         tool(TASK_STATUS, "List recent tasks or one task (task_id) with its event history.", JSONObject().put("task_id", p("integer")).put("limit", p("integer"))),
         tool(TASK_CANCEL, "Cancel a queued/waiting/needs-user task.", JSONObject().put("task_id", p("integer")), listOf("task_id")),
         tool(AUDIT, "Audit trail (actor, tool, tier, decision, args SHA-256) + recent outbox states.", JSONObject().put("limit", p("integer"))),
-        tool(CONTROL, "Autonomy flags. op=status|enable (HIGH: confirm=true; only autonomy/planner/llm)|disable|stop_all|run_now. Send/memory/hosted are device-only to enable.",
-            JSONObject().put("op", e("status", "enable", "disable", "stop_all", "run_now")).put("flag", e(*AutonomyFlags.DEFAULTS.keys.toTypedArray()))
+        tool(CONTROL, "Autonomy flags + thermal gate. op=status|enable (HIGH: confirm=true; only autonomy/planner/llm)|disable|stop_all|run_now|thermal (real temps)|thermal_set (confirm=true; hard ceilings 90 °C CPU / 50 °C battery). Send/memory/hosted are device-only to enable.",
+            JSONObject().put("op", e("status", "enable", "disable", "stop_all", "run_now", "thermal", "thermal_set"))
+                .put("flag", e(*AutonomyFlags.DEFAULTS.keys.toTypedArray()))
+                .put("cpu_throttle_c", p("number")).put("cpu_stop_c", p("number", "clamped to <= 90"))
+                .put("battery_throttle_c", p("number")).put("battery_stop_c", p("number", "clamped to <= 50"))
                 .put("confirm", p("boolean")), listOf("op")),
         tool(MEMORY, "Owner memory. op=list|propose (stored as pending until accepted on device)|delete.",
             JSONObject().put("op", e("list", "propose", "delete")).put("text", p("string")).put("id", p("integer")), listOf("op")),

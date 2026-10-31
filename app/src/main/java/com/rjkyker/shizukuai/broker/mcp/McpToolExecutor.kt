@@ -33,6 +33,7 @@ import com.rjkyker.shizukuai.broker.shell.TermuxShellBridge
 import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import com.rjkyker.shizukuai.broker.autonomy.AutonomyMcp
+import com.rjkyker.shizukuai.broker.assist.AssistMcp
 import com.rjkyker.shizukuai.broker.autonomy.audit.AuditLog
 import com.rjkyker.shizukuai.broker.autonomy.registry.Actor
 import com.rjkyker.shizukuai.broker.autonomy.registry.PermissionEngine
@@ -91,6 +92,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_PRIV -> privService(args, confirmed)
                 TOOL_DELEGATION -> clientDelegation(args)
                 in AutonomyMcp.TOOLS -> AutonomyMcp.call(context, name, args, confirmed)
+                in AssistMcp.TOOLS -> AssistMcp.call(context, name, args, confirmed)
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
@@ -632,7 +634,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY,
             TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS,
             TOOL_OWNER_POLICY, TOOL_PRIV, TOOL_DELEGATION
-        ) + A11Y_TOOLS + AutonomyMcp.TOOLS
+        ) + A11Y_TOOLS + AutonomyMcp.TOOLS + AssistMcp.TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
 
@@ -642,7 +644,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             "remove_admin", "clear_device_owner", "lock_now", "reboot"
         )
 
-        fun toolDefinitions(): JSONArray = baseToolDefinitions().also { a -> AutonomyMcp.definitions().forEach { a.put(it) } }
+        fun toolDefinitions(): JSONArray = baseToolDefinitions().also { a -> AutonomyMcp.definitions().forEach { a.put(it) }; AssistMcp.definitions().forEach { a.put(it) } }
 
         private fun baseToolDefinitions(): JSONArray = JSONArray()
             .put(

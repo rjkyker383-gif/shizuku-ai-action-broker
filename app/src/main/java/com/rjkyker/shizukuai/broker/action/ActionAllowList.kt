@@ -94,6 +94,11 @@ object ActionAllowList {
         "autonomy_control" to RiskLevel.MEDIUM,
         "memory_control" to RiskLevel.MEDIUM,
         "send_request" to RiskLevel.MEDIUM,
+        // 1.9.1 type-anywhere (focused field read/insert/suggest); insert is HIGH and never submits
+        "input_focused_read" to RiskLevel.MEDIUM,
+        "input_focused_insert" to RiskLevel.HIGH,
+        "input_suggest" to RiskLevel.MEDIUM,
+        "input_assist_config" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

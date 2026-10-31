@@ -30,11 +30,13 @@ class AgentAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        com.rjkyker.shizukuai.broker.assist.AssistController.attach(this)
         Log.i(TAG, "AgentAccessibilityService connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Event-driven hooks not required for broker snapshot/actions.
+        // 1.9.1 type-anywhere: focus/text events drive the suggestion chip (metadata only; nothing logged).
+        if (event != null) runCatching { com.rjkyker.shizukuai.broker.assist.AssistController.onEvent(this, event) }
     }
 
     override fun onInterrupt() {
@@ -43,6 +45,7 @@ class AgentAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        com.rjkyker.shizukuai.broker.assist.AssistController.detach()
         super.onDestroy()
         Log.i(TAG, "AgentAccessibilityService destroyed")
     }
@@ -116,6 +119,9 @@ class AgentAccessibilityService : AccessibilityService() {
             val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
                 ?: findEditable(root)
             if (focused == null) return false
+            // 1.9.1: never type into password / OTP / PIN / card fields
+            if (com.rjkyker.shizukuai.broker.assist.FieldGuard.blockReason(
+                    com.rjkyker.shizukuai.broker.assist.FocusedInput.guardField(focused)) != null) { recycleQuietly(focused); return false }
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
@@ -264,7 +270,7 @@ class AgentAccessibilityService : AccessibilityService() {
     fun setTextFocused(text: String): JSONObject {
         val ok = inputText(text)
         return JSONObject().put("ok", ok).put("via", "a11y.ACTION_SET_TEXT").put("len", text.length)
-            .also { if (!ok) it.put("error", "no focused/editable field on screen") }
+            .also { if (!ok) it.put("error", "no focused/editable field on screen, or it is a password/OTP/card field (refused)") }
     }
 
     /**

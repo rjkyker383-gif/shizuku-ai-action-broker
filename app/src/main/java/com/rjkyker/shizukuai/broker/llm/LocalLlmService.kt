@@ -14,6 +14,8 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.Process
 import android.util.Log
+import com.rjkyker.shizukuai.broker.thermal.ThermalPolicy
+import com.rjkyker.shizukuai.broker.thermal.ThermalReader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -50,22 +52,11 @@ class LocalLlmService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (Build.VERSION.SDK_INT >= 29) {
-            val pm = getSystemService(PowerManager::class.java)
-            val l = PowerManager.OnThermalStatusChangedListener { s ->
-                if (s >= PowerManager.THERMAL_STATUS_SEVERE) {
-                    Log.w(TAG, "thermal $s -> cancel + unload")
-                    cancelInternal(); main.postDelayed({ unloadInternal("thermal_$s") }, 500)
-                }
-            }
-            runCatching { pm.addThermalStatusListener(l); thermalListener = l }
-        }
+        // 1.9.1: no PowerManager listener (TC22 reports SEVERE at ~47 °C). A watcher polls REAL temperatures
+        // during generation and cancels at ThermalPolicy STOP.
     }
 
     override fun onDestroy() {
-        if (Build.VERSION.SDK_INT >= 29) (thermalListener as? PowerManager.OnThermalStatusChangedListener)?.let {
-            runCatching { getSystemService(PowerManager::class.java).removeThermalStatusListener(it) }
-        }
         cancelInternal(); dlCancel.set(true)
         unloadInternal("destroy")
         super.onDestroy()
@@ -109,6 +100,7 @@ class LocalLlmService : Service() {
             .put("download", JSONObject().put("model", dlId).put("state", dlState).put("bytes", dlBytes)
                 .put("total", dlTotal).put("error", dlError))
             .put("rss_kb", procStatusKb("VmRSS")).put("peak_rss_kb", procStatusKb("VmHWM"))
+            .put("thermal", ThermalReader.statusJson(this, allowPriv = false))
             .put("free_storage_mb", Preflight.freeStorageBytes(this) / PreflightResult.MB)
             .put("last_result", lastResult?.let { JSONObject(it.toString()).apply { remove("text") } })
             .put("last_error", lastError)
@@ -181,8 +173,8 @@ class LocalLlmService : Service() {
                     if (handle == 0L) return err("model load failed", "load_failed")
                     loadedId = spec.id
                 } else {
-                    val thermal = Preflight.gather(this, spec).thermalStatus
-                    if (thermal >= Preflight.THERMAL_MODERATE) return err("thermal status $thermal >= MODERATE; try later", "thermal")
+                    val g = Preflight.gather(this, spec)
+                    if (g.thermalLevel >= Preflight.THERMAL_STOP) return err("thermal STOP: ${g.thermalReason}", "thermal")
                 }
             }
             foreground(true, "Generating locally with ${spec.id}")
@@ -195,8 +187,18 @@ class LocalLlmService : Service() {
             val topP = req.optDouble("top_p", 0.9).toFloat().coerceIn(0.05f, 1f)
             val timeout = req.optLong("timeout_ms", TIMEOUT_MS).coerceIn(1_000, TIMEOUT_MS)
             val t0 = System.currentTimeMillis()
+            val watcher = Thread({
+                try {
+                    while (generating.get()) {
+                        Thread.sleep(2000)
+                        val v = ThermalPolicy.evaluate(ThermalReader.read(this, allowPriv = false, force = true), ThermalReader.config(this))
+                        if (v.level == ThermalPolicy.Level.STOP) { Log.w(TAG, "thermal STOP mid-generation: ${v.reason}"); cancelInternal(); break }
+                    }
+                } catch (_: InterruptedException) {}
+            }, "llm-thermal").apply { isDaemon = true; start() }
             val out = JSONObject(LlamaNative.nativeGenerate(handle, prompt, maxNew, temp, topP,
                 req.optInt("seed", 42), timeout, null))
+            watcher.interrupt()
             out.put("model", spec.id).put("backend", "llama.cpp-cpu").put("load_ms", loadMs)
                 .put("wall_ms", System.currentTimeMillis() - t0)
                 .put("rss_kb", procStatusKb("VmRSS")).put("peak_rss_kb", procStatusKb("VmHWM"))
