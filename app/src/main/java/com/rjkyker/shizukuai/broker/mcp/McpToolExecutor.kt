@@ -34,6 +34,10 @@ import com.rjkyker.shizukuai.broker.zebra.ZebraCapabilityLayer
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import com.rjkyker.shizukuai.broker.autonomy.AutonomyMcp
 import com.rjkyker.shizukuai.broker.assist.AssistMcp
+import com.rjkyker.shizukuai.broker.policy.PoliciesMcp
+import com.rjkyker.shizukuai.broker.cache.CacheMcp
+import com.rjkyker.shizukuai.broker.stagenow.StageNowMcp
+import com.rjkyker.shizukuai.broker.policy.BrokerPolicies
 import com.rjkyker.shizukuai.broker.autonomy.audit.AuditLog
 import com.rjkyker.shizukuai.broker.autonomy.registry.Actor
 import com.rjkyker.shizukuai.broker.autonomy.registry.PermissionEngine
@@ -93,6 +97,9 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
                 TOOL_DELEGATION -> clientDelegation(args)
                 in AutonomyMcp.TOOLS -> AutonomyMcp.call(context, name, args, confirmed)
                 in AssistMcp.TOOLS -> AssistMcp.call(context, name, args, confirmed)
+                in PoliciesMcp.TOOLS -> PoliciesMcp.call(context, name, args, confirmed)
+                in CacheMcp.TOOLS -> CacheMcp.call(context, name, args, confirmed)
+                in StageNowMcp.TOOLS -> StageNowMcp.call(context, name, args, confirmed)
                 else -> err("unknown tool: $name")
             }
         } catch (e: Exception) {
@@ -280,30 +287,49 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
 
     // ---------------- a11y_* (accessibility only, no ADB / Shizuku) ----------------
 
+    private fun a11yForegroundPkg(a: AgentAccessibilityService): String? =
+        runCatching { a.rootInActiveWindow?.packageName?.toString() }.getOrNull()
+
+    /** When Policies → foreground_recheck is on and expect_package is set, abort touches if the FG app differs. */
+    private fun a11yForegroundGate(a: AgentAccessibilityService, name: String, args: JSONObject): JSONObject? {
+        val touch = name == TOOL_A11Y_TAP || name == TOOL_A11Y_SWIPE || name == TOOL_A11Y_TEXT || name == TOOL_A11Y_CLICK_TEXT
+        if (!touch || !BrokerPolicies.foregroundRecheck(context)) return null
+        val expect = args.optString("expect_package", "").ifBlank { null } ?: return null
+        val fg = a11yForegroundPkg(a)
+        if (fg != null && fg != expect) {
+            return err("foreground recheck failed: expected $expect, found $fg — touch aborted")
+                .put("expect_package", expect).put("foreground_package", fg)
+        }
+        return null
+    }
+
     private fun a11yTool(name: String, args: JSONObject): JSONObject {
         val a = AgentAccessibilityService.instance
             ?: return err("accessibility service not connected",
                 "enable Shizuku AI Broker in Settings > Accessibility (or accessibility_ensure on the Muse bridge)")
+        a11yForegroundGate(a, name, args)?.let { return it }
         fun num(k: String): Double = args.optDouble(k, Double.NaN)
+        val fg = a11yForegroundPkg(a)
+        fun withFg(o: JSONObject) = o.put("foreground_package", fg ?: JSONObject.NULL)
         return when (name) {
-            TOOL_A11Y_SCREENSHOT -> a.screenshot(
-                args.optInt("max_width", 720), args.optString("format", "png"), args.optInt("quality", 80))
-            TOOL_A11Y_UI_TREE -> a.uiTree(args.optInt("max_nodes", 400), args.optBoolean("all_windows", false))
+            TOOL_A11Y_SCREENSHOT -> withFg(a.screenshot(
+                args.optInt("max_width", 720), args.optString("format", "png"), args.optInt("quality", 80)))
+            TOOL_A11Y_UI_TREE -> withFg(a.uiTree(args.optInt("max_nodes", 400), args.optBoolean("all_windows", false)))
             TOOL_A11Y_TAP -> {
                 val x = num("x"); val y = num("y")
                 if (x.isNaN() || y.isNaN()) return err("a11y_tap requires x,y")
-                JSONObject().put("ok", a.tap(x.toFloat(), y.toFloat(), args.optLong("duration_ms", 60L)))
-                    .put("via", "a11y.dispatchGesture").put("x", x).put("y", y)
+                withFg(JSONObject().put("ok", a.tap(x.toFloat(), y.toFloat(), args.optLong("duration_ms", 60L)))
+                    .put("via", "a11y.dispatchGesture").put("x", x).put("y", y))
             }
             TOOL_A11Y_SWIPE -> {
                 val x1 = num("x1"); val y1 = num("y1"); val x2 = num("x2"); val y2 = num("y2")
                 if (x1.isNaN() || y1.isNaN() || x2.isNaN() || y2.isNaN()) return err("a11y_swipe requires x1,y1,x2,y2")
-                JSONObject().put("ok", a.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(),
-                    args.optLong("duration_ms", 300L).coerceIn(1L, 10_000L))).put("via", "a11y.dispatchGesture")
+                withFg(JSONObject().put("ok", a.swipe(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(),
+                    args.optLong("duration_ms", 300L).coerceIn(1L, 10_000L))).put("via", "a11y.dispatchGesture"))
             }
-            TOOL_A11Y_TEXT -> a.setTextFocused(args.optString("text", "").take(5000))
-            TOOL_A11Y_GLOBAL -> a.globalAction(args.optString("action", ""))
-            TOOL_A11Y_CLICK_TEXT -> a.clickText(args.optString("text", ""), args.optBoolean("exact", false), args.optInt("index", 0))
+            TOOL_A11Y_TEXT -> withFg(a.setTextFocused(args.optString("text", "").take(5000)))
+            TOOL_A11Y_GLOBAL -> withFg(a.globalAction(args.optString("action", "")))
+            TOOL_A11Y_CLICK_TEXT -> withFg(a.clickText(args.optString("text", ""), args.optBoolean("exact", false), args.optInt("index", 0)))
             else -> err("unknown a11y tool $name")
         }
     }
@@ -634,7 +660,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             TOOL_ZEBRA_WIFI, TOOL_ZEBRA_DW, TOOL_ZEBRA_SCANNER, TOOL_DISCOVERY,
             TOOL_BROKER_PAUSE, TOOL_BROKER_RESUME, TOOL_BROKER_PAUSE_STATUS,
             TOOL_OWNER_POLICY, TOOL_PRIV, TOOL_DELEGATION
-        ) + A11Y_TOOLS + AutonomyMcp.TOOLS + AssistMcp.TOOLS
+        ) + A11Y_TOOLS + AutonomyMcp.TOOLS + AssistMcp.TOOLS + PoliciesMcp.TOOLS + CacheMcp.TOOLS + StageNowMcp.TOOLS
 
         val DATAWEDGE_COMMANDS = listOf("soft_scan", "switch_profile", "create_profile", "set_config")
 
@@ -644,7 +670,7 @@ class McpToolExecutor(private val context: Context, private val router: ActionRo
             "remove_admin", "clear_device_owner", "lock_now", "reboot"
         )
 
-        fun toolDefinitions(): JSONArray = baseToolDefinitions().also { a -> AutonomyMcp.definitions().forEach { a.put(it) }; AssistMcp.definitions().forEach { a.put(it) } }
+        fun toolDefinitions(): JSONArray = baseToolDefinitions().also { a -> AutonomyMcp.definitions().forEach { a.put(it) }; AssistMcp.definitions().forEach { a.put(it) }; PoliciesMcp.definitions().forEach { a.put(it) }; CacheMcp.definitions().forEach { a.put(it) }; StageNowMcp.definitions().forEach { a.put(it) } }
 
         private fun baseToolDefinitions(): JSONArray = JSONArray()
             .put(

@@ -99,6 +99,10 @@ object ActionAllowList {
         "input_focused_insert" to RiskLevel.HIGH,
         "input_suggest" to RiskLevel.MEDIUM,
         "input_assist_config" to RiskLevel.MEDIUM,
+        // 1.10.0 policies / cache / StageNow
+        "broker_policies" to RiskLevel.MEDIUM,
+        "broker_cache" to RiskLevel.MEDIUM,
+        "stagenow" to RiskLevel.MEDIUM,
         // MVP structured GET_* / OPEN_* actions
         "GET_DEVICE_INFO" to RiskLevel.LOW,
         "GET_PACKAGE_LIST" to RiskLevel.LOW,

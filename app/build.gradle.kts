@@ -12,8 +12,8 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 23
-        versionName = "1.9.4-dev"
+        versionCode = 24
+        versionName = "1.10.0-dev"
         // 1.9.0 on-device LLM (llama.cpp JNI). TC22 + modern phones are arm64 only.
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
@@ -23,7 +23,7 @@ android {
             }
         }
     }
-    ndkVersion = "27.2.12479018"
+    ndkVersion = "27.1.12297006"
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

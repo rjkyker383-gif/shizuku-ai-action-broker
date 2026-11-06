@@ -60,6 +60,9 @@ object PermissionEngine {
         ToolSpec("input_suggest", Tier.MEDIUM, false, "completion suggestion for the focused field; inserts nothing"),
         ToolSpec("input_focused_insert", Tier.HIGH, false, "insert at cursor; refuses password fields; never submits"),
         ToolSpec("input_assist_config", Tier.MEDIUM, false, "type-anywhere settings; remote needs confirm"),
+        ToolSpec("broker_policies", Tier.MEDIUM, false, "soft policy toggles; hard denylist is locked"),
+        ToolSpec("broker_cache", Tier.MEDIUM, false, "clear own cache / trim-caches; never pm clear"),
+        ToolSpec("stagenow", Tier.MEDIUM, false, "export/launch StageNow MX XML; no license bypass"),
         ToolSpec("send_approve", Tier.HIGH, false, "approve one pending send (device UI only)"),
         ToolSpec("memory_accept", Tier.MEDIUM, false, "accept an AI memory proposal (device UI only)"),
         ToolSpec("send_allowlist_edit", Tier.HIGH, false, "edit send allowlists (device UI only)"),
@@ -75,6 +78,7 @@ object PermissionEngine {
     private val NEVER_AUTONOMOUS = setOf("exec_shell", "priv_service", "owner_policy", "manage_dhizuku_policy",
         "zebra_wifi_config", "a11y_tap", "a11y_text", "a11y_swipe", "a11y_global", "a11y_click_text",
         "input_focused_read", "input_focused_insert", "input_suggest", "input_assist_config",
+        "broker_policies", "broker_cache", "stagenow",
         "perform_gesture", "hotspot_start", "upstream_mcp_relay", "bridge_relay", "client_delegation")
 
     fun tierOf(tool: String): Tier {

@@ -5,6 +5,7 @@ import android.util.Log
 import com.rjkyker.shizukuai.broker.util.SecurePrefs
 import org.json.JSONArray
 import org.json.JSONObject
+import com.rjkyker.shizukuai.broker.policy.BrokerPolicies
 import org.json.JSONTokener
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -140,6 +141,9 @@ class BridgeMeshRelay(private val context: Context) {
                 "bridge '$b' not configured",
                 "Set the $b bridge URL in the broker app. No URL is hardcoded."
             )
+        }
+        if (!BrokerPolicies.hostAllowed(context, url)) {
+            return err("bridge '$b' host not in MCP host allowlist (Policies → Enforce MCP host allowlist)")
         }
         val h = health(b, timeoutMs.coerceAtMost(5_000L))
         if (!h.optBoolean("ok", false)) {

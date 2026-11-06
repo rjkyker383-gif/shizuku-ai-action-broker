@@ -37,6 +37,9 @@ class AutonomyPanelController(
         b.autoAssistButton.setOnClickListener {
             act.startActivity(Intent(act, com.rjkyker.shizukuai.broker.assist.AssistSettingsActivity::class.java))
         }
+        b.autoPoliciesButton.setOnClickListener {
+            act.startActivity(Intent(act, PoliciesActivity::class.java))
+        }
         b.autoRefreshButton.setOnClickListener { refresh() }
         b.autoToggleButton.setOnClickListener { toggleAutonomy() }
         b.autoStopAllButton.setOnClickListener {

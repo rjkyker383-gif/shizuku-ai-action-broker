@@ -122,6 +122,19 @@
 
         <!-- 1.9.1 type-anywhere: settings + quick-settings Assist tile -->
         <activity
+            android:name=".ui.PoliciesActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+        <activity
             android:name=".assist.AssistSettingsActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

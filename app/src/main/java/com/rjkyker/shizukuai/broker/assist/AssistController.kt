@@ -6,6 +6,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.rjkyker.shizukuai.broker.autonomy.audit.AuditLog
+import com.rjkyker.shizukuai.broker.policy.BrokerPolicies
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -52,7 +53,7 @@ object AssistController {
     fun refreshBubble() {
         val svc = svcRef ?: return
         val o = overlay ?: return
-        if (AssistSettings.enabled(svc) && AssistSettings.floatingButton(svc)) o.showBubble { requestNow() } else o.hideBubble()
+        if (AssistSettings.enabled(svc) && BrokerPolicies.get(svc, BrokerPolicies.TYPE_ANYWHERE) && AssistSettings.floatingButton(svc)) o.showBubble { requestNow() } else o.hideBubble()
     }
     /** MCP path: runs on the caller's thread (not main). */
     fun typewriteBlocking(svc: AccessibilityService, text: String): Typewriter.Outcome = typewrite(svc, text)
@@ -64,7 +65,7 @@ object AssistController {
     fun detach() { main.removeCallbacks(trigger); overlay?.hideAll(); overlay = null; svcRef = null }
 
     fun onEvent(svc: AccessibilityService, e: AccessibilityEvent) {
-        if (!AssistSettings.enabled(svc)) { overlay?.hideAll(); return }
+        if (!AssistSettings.enabled(svc) || !BrokerPolicies.get(svc, BrokerPolicies.TYPE_ANYWHERE)) { overlay?.hideAll(); return }
         val pkg = e.packageName?.toString()
         val src = runCatching { e.source }.getOrNull()
         val editable = src?.isEditable == true

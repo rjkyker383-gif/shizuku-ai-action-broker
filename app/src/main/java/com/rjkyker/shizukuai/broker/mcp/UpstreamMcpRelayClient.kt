@@ -1,6 +1,7 @@
 package com.rjkyker.shizukuai.broker.mcp
 
 import android.content.Context
+import com.rjkyker.shizukuai.broker.policy.BrokerPolicies
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.util.Log
@@ -68,6 +69,9 @@ class UpstreamMcpRelayClient(private val context: Context) {
                     "http://100.x.x.x:port/mcp). 192.168.x.x only works on home Wi-Fi — put that " +
                     "in the optional LAN fallback, not as the primary."
             )
+        }
+        if (!BrokerPolicies.hostAllowed(context, primary)) {
+            return err("upstream host not in MCP host allowlist (Policies → Enforce MCP host allowlist)")
         }
         val primaryResult = callUrl(primary, method, params, timeoutMs)
         if (primaryResult.optBoolean("ok", false) || !isTransportFailure(primaryResult)) {
