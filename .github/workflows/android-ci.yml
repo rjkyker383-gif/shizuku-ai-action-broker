@@ -31,8 +31,8 @@ jobs:
           echo "/usr/local/lib/android/sdk/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
       - name: Accept licenses and install pinned Android toolchain
         run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager 'platforms;android-34' 'build-tools;34.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+          yes | /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager --licenses >/dev/null
+          /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager 'platforms;android-34' 'build-tools;34.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
       - name: Run JVM tests and build TC22 APK
         run: |
           chmod +x ./gradlew
