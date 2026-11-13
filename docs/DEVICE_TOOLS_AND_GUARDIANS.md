@@ -21,3 +21,8 @@ Guardians are OFF until the owner starts them. Each pin is an explicit namespace
 ## Build and install
 
 The `android-ci.yml` workflow checks out the llama.cpp submodule, installs the pinned Android 34 / NDK 27.2.12479018 / CMake 3.22.1 toolchain, runs JVM unit tests, assembles the arm64 debug APK, and uploads it as `shizuku-ai-action-broker-tc22-debug`. Install only after the workflow succeeds and the artifact is downloaded, using `adb install -r app-debug.apk` against the intended device. This build is a development APK, not a signed Play release.
+
+
+## Watchdog boundary
+
+The existing broker watchdog keeps the BrokerServer healthy and reasserts this app's own accessibility service. It does not force-start an unrelated keyboard or third-party app. The TC22 package inventory did not show a separate app named Type Anywhere, so no external package restart target has been configured.
