@@ -723,6 +723,30 @@
                         android:layout_height="wrap_content"
                         android:text="@string/mod_console" />
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/deviceToolsButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/device_tools" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/cacheExplorerButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/cache_explorer" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/guardianButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_guardians" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wifiNetworksButton"
+                        style="@style/CC.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/wifi_saved_networks" />
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/ownerOpButton"
                         style="@style/CC.Button"
                         android:layout_width="match_parent"
