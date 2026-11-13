@@ -12,8 +12,8 @@ android {
         applicationId = "com.rjkyker.shizukuai.broker"
         minSdk = 28
         targetSdk = 34
-        versionCode = 24
-        versionName = "1.10.0-dev"
+        versionCode = 25
+        versionName = "1.10.1-dev"
         // 1.9.0 on-device LLM (llama.cpp JNI). TC22 + modern phones are arm64 only.
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
@@ -79,6 +79,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Command-center dashboard lists
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("org.apache.commons:commons-compress:1.26.2")
     // 1.9.0 autonomy: durable queue / audit / memory / outbox (Room, additive migrations + exported schema)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
