@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.provider.DocumentsContract
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -98,6 +99,13 @@ class DeviceToolsActivity : AppCompatActivity() {
             val dest = DocumentFile.fromTreeUri(this, data.data!!)
             val source = pendingTransfer
             if (source != null && dest != null) {
+                val unsafe = transferDestinationError(source, dest)
+                if (unsafe != null) {
+                    toast(unsafe)
+                    pendingTransfer = null
+                    pendingMove = false
+                    return
+                }
                 val ok = runCatching {
                     val copied = copyDocument(source, dest)
                     copied != null && (!pendingMove || source.delete())
@@ -171,6 +179,18 @@ class DeviceToolsActivity : AppCompatActivity() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         startActivityForResult(i, REQ_DESTINATION)
     }
+    private fun transferDestinationError(source: DocumentFile, destination: DocumentFile): String? = runCatching {
+        if (source.uri.authority != destination.uri.authority) return@runCatching null
+        val sourceId = if (DocumentsContract.isTreeUri(source.uri)) DocumentsContract.getTreeDocumentId(source.uri)
+            else DocumentsContract.getDocumentId(source.uri)
+        val destinationId = DocumentsContract.getTreeDocumentId(destination.uri)
+        if (sourceId == destinationId) return@runCatching "Choose a different destination folder."
+        if (source.isDirectory && destinationId.startsWith("$sourceId/")) return@runCatching "A folder cannot be copied or moved into itself."
+        val parentId = sourceId.substringBeforeLast('/', "")
+        if (parentId.isNotEmpty() && parentId == destinationId) return@runCatching "That item is already in the selected folder."
+        null
+    }.getOrNull()
+
     private fun copyDocument(source: DocumentFile, target: DocumentFile): DocumentFile? {
         if (source.isDirectory) {
             val folder = target.createDirectory(source.name ?: "copied-folder") ?: return null
