@@ -26,3 +26,5 @@ The `android-ci.yml` workflow checks out the llama.cpp submodule, installs the p
 ## Watchdog boundary
 
 The existing broker watchdog keeps the BrokerServer healthy and reasserts this app's own accessibility service. It does not force-start an unrelated keyboard or third-party app. The TC22 package inventory did not show a separate app named Type Anywhere, so no external package restart target has been configured.
+
+The CI runner uses its preinstalled Android command-line tools directly, avoiding the deprecated `sdkmanager tools` package requested by some setup actions.
