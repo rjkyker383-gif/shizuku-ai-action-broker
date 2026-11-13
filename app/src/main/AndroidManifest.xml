@@ -120,6 +120,19 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.ShizukuAiBroker" />
 
+        <!-- 1.10.1 owner-launched SAF storage tools and bounded settings guardians. -->
+        <activity android:name=".tools.DeviceToolsActivity" android:exported="false" />
+        <activity android:name=".tools.GuardianActivity" android:exported="false" />
+        <receiver android:name=".tools.GuardianStopReceiver" android:exported="false" />
+        <service
+            android:name=".tools.GuardianService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Owner-configured settings guardian with bounded retries and a visible stop notification" />
+        </service>
+
         <!-- 1.9.1 type-anywhere: settings + quick-settings Assist tile -->
         <activity
             android:name=".ui.PoliciesActivity"

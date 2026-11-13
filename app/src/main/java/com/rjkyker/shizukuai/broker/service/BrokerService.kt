@@ -65,6 +65,8 @@ class BrokerService : Service() {
         override fun run() {
             try {
                 ensureServer()
+                // Owner-enabled Settings Guardian is a separate FGS; recover it if Android kills it.
+                runCatching { com.rjkyker.shizukuai.broker.tools.GuardianService.ensureRunning(applicationContext) }
                 if (BrokerPause.isPaused(applicationContext)) {
                     // Keep MCP alive; do not restart background loops while paused.
                     return

@@ -103,6 +103,24 @@ class PoliciesActivity : AppCompatActivity() {
             }
         })
 
+        col.addView(txt("STORAGE MANAGER", ModFx.CYAN, 18f))
+        col.addView(txt("Browse a folder you explicitly grant through Android's Storage Access Framework. Copy, move, rename, delete, create folders, and create/extract ZIP or TAR archives.", ModFx.DIM, 13f))
+        col.addView(Button(this).apply {
+            text = "Open storage manager"
+            setOnClickListener { startActivity(Intent(this@PoliciesActivity, com.rjkyker.shizukuai.broker.tools.DeviceToolsActivity::class.java)) }
+        })
+        col.addView(Button(this).apply {
+            text = "Open Wi-Fi saved networks / QR sharing"
+            setOnClickListener { runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }.onFailure { Toast.makeText(this@PoliciesActivity, "Wi-Fi settings unavailable", Toast.LENGTH_SHORT).show() } }
+        })
+
+        col.addView(txt("SETTINGS GUARDIANS", ModFx.CYAN, 18f))
+        col.addView(txt("Pin selected Global/System/Secure settings or app-owned persist.rjkyker.* properties. Owner opt-in, visible notification, bounded retries, security-key denylist, and local audit.", ModFx.DIM, 13f))
+        col.addView(Button(this).apply {
+            text = "Manage settings guardians"
+            setOnClickListener { startActivity(Intent(this@PoliciesActivity, com.rjkyker.shizukuai.broker.tools.GuardianActivity::class.java)) }
+        })
+
         col.addView(txt("STAGENOW / MX", ModFx.CYAN, 18f))
         col.addView(txt("Legitimate MX XML only. No Mobility DNA license bypass. Premium MX is listed as omitted.", ModFx.DIM, 13f))
         listOf(
