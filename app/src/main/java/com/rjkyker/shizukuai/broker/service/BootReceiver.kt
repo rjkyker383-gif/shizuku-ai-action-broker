@@ -38,6 +38,12 @@ class BootReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Log.w(TAG, "SecureSettingsKeepalive failed: ${e.message}")
                 }
+                if (action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+                    if (com.rjkyker.shizukuai.broker.tools.GuardianStore.isEnabled(context.applicationContext)) {
+                        try { com.rjkyker.shizukuai.broker.tools.GuardianService.start(context.applicationContext) }
+                        catch (e: Exception) { Log.w(TAG, "Guardian restart deferred: ${e.message}") }
+                    }
+                }
             }
         }
     }
