@@ -107,6 +107,7 @@ class DeviceToolsActivity : AppCompatActivity() {
                 pendingMove = false
                 render()
             }
+        }
     }
 
     private fun render() {
