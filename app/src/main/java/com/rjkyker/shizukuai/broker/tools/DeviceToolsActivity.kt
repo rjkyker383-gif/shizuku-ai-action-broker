@@ -107,16 +107,6 @@ class DeviceToolsActivity : AppCompatActivity() {
                 pendingMove = false
                 render()
             }
-        } else if (requestCode == REQ_ARCHIVE) {
-            val target = currentDir
-            if (target != null) runCatching {
-                contentResolver.openInputStream(data.data!!)?.use { input ->
-                    val name = data.data!!.lastPathSegment?.substringAfterLast('/') ?: "archive"
-                    if (name.endsWith(".zip", true)) extractZip(input, target) else extractTar(input, target)
-                }
-            }.onSuccess { toast("Archive extracted") }.onFailure { toast("Extraction failed: ${it.message}") }
-            render()
-        }
     }
 
     private fun render() {
@@ -200,7 +190,7 @@ class DeviceToolsActivity : AppCompatActivity() {
             contentResolver.openOutputStream(archive.uri)?.use { raw ->
                 if (zip) ZipOutputStream(BufferedOutputStream(raw)).use { out -> zipTree(dir, out, archive.uri) }
                 else TarArchiveOutputStream(BufferedOutputStream(raw)).use { out ->
-                    out.longFileMode = TarArchiveOutputStream.LONGFILE_POSIX
+                    out.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
                     tarTree(dir, out, archive.uri)
                 }
             } ?: error("No output stream")
