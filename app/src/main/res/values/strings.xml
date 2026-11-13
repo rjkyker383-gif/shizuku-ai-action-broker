@@ -103,4 +103,8 @@
     <string name="auto_watchdog">Run watchdog now</string>
     <string name="auto_idle">Local model, queue, audit and send gate status appear here.</string>
     <string name="mod_console">⚡ Mod Console (Dhizuku + owner ops HUD)</string>
+    <string name="device_tools">Storage manager (SAF · ZIP/TAR)</string>
+    <string name="cache_explorer">Cache explorer (broker cache)</string>
+    <string name="settings_guardians">Settings guardians (pin / restore)</string>
+    <string name="wifi_saved_networks">Wi-Fi saved networks / QR sharing</string>
 </resources>
