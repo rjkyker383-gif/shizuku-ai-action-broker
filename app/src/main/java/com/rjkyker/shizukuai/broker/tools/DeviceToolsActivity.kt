@@ -173,12 +173,35 @@ class DeviceToolsActivity : AppCompatActivity() {
     private fun copyDocument(source: DocumentFile, target: DocumentFile): DocumentFile? {
         if (source.isDirectory) {
             val folder = target.createDirectory(source.name ?: "copied-folder") ?: return null
-            source.listFiles().forEach { copyDocument(it, folder) }
-            return folder
+            try {
+                for (child in source.listFiles()) {
+                    if (copyDocument(child, folder) == null) {
+                        deleteTree(folder)
+                        return null
+                    }
+                }
+                return folder
+            } catch (e: Exception) {
+                deleteTree(folder)
+                throw e
+            }
         }
         val out = target.createFile(contentResolver.getType(source.uri) ?: "application/octet-stream", source.name ?: "copy") ?: return null
-        contentResolver.openInputStream(source.uri).use { input -> contentResolver.openOutputStream(out.uri).use { output -> if (input != null && output != null) input.copyTo(output) } }
-        return out
+        val input = contentResolver.openInputStream(source.uri)
+        if (input == null) { out.delete(); return null }
+        val output = contentResolver.openOutputStream(out.uri)
+        if (output == null) { input.close(); out.delete(); return null }
+        try {
+            input.use { src -> output.use { dst -> src.copyTo(dst) } }
+            return out
+        } catch (e: Exception) {
+            out.delete()
+            throw e
+        }
+    }
+    private fun deleteTree(doc: DocumentFile) {
+        if (doc.isDirectory) doc.listFiles().forEach { deleteTree(it) }
+        doc.delete()
     }
 
     private fun createArchive(zip: Boolean) {
