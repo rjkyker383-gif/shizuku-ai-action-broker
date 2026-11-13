@@ -276,7 +276,7 @@ class GuardianActivity : AppCompatActivity() {
         box.addView(TextView(this).apply { text = "Pin only settings you choose. Restoration is bounded to 3 attempts per change. Security-sensitive keys are blocked."; textSize = 12f })
         namespace = Spinner(this).apply { adapter = ArrayAdapter(this@GuardianActivity, android.R.layout.simple_spinner_dropdown_item, listOf("global", "system", "secure", "property")) }
         box.addView(namespace)
-        key = EditText(this).apply { hint = "Setting key (e.g. screen_brightness)"; singleLine = true }
+        key = EditText(this).apply { hint = "Setting key (e.g. screen_brightness)"; setSingleLine(true) }
         box.addView(key)
         value = EditText(this).apply { hint = "Pinned value"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE; minLines = 1 }
         box.addView(value)
