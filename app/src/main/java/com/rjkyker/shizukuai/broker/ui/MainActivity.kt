@@ -167,6 +167,10 @@ class MainActivity : AppCompatActivity() {
         binding.scanRepairButton.setOnClickListener { repairDataWedge() }
         binding.roamHardenButton.setOnClickListener { roamHarden() }
         ownerPanel = OwnerPanelController(this, binding) { ioSafe(it) }.also { it.setup() }
+        binding.deviceToolsButton.setOnClickListener { startActivity(Intent(this, com.rjkyker.shizukuai.broker.tools.DeviceToolsActivity::class.java)) }
+        binding.cacheExplorerButton.setOnClickListener { startActivity(Intent(this, com.rjkyker.shizukuai.broker.tools.CacheExplorerActivity::class.java)) }
+        binding.guardianButton.setOnClickListener { startActivity(Intent(this, com.rjkyker.shizukuai.broker.tools.GuardianActivity::class.java)) }
+        binding.wifiNetworksButton.setOnClickListener { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
         autonomyPanel = AutonomyPanelController(this, binding) { ioSafe(it) }.also { it.setup(); it.refresh() }
         if (intent?.getBooleanExtra("open_delegation", false) == true) ownerPanel?.manageClients()
         openExtraScreens(intent)
